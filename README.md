@@ -4,6 +4,33 @@ A web application for diabetes-friendly meal planning, blood sugar tracking, and
 
 ---
 
+## Quick Install Commands
+
+Run these commands from the root of the project to install all dependencies for both frontend and backend.
+
+### Frontend
+
+```bash
+cd frontend
+npm install
+npm install react react-dom react-router-dom tailwindcss chart.js firebase
+# (Optional) If using create-react-app, install it globally:
+# npm install -g create-react-app
+```
+
+### Backend
+
+```bash
+cd backend
+python -m venv venv
+source venv/bin/activate  # On Windows: venv\Scripts\activate
+pip install fastapi uvicorn scikit-learn joblib pandas python-dotenv firebase-admin
+# Or, to install all dependencies from requirements.txt:
+pip install -r requirements.txt
+```
+
+---
+
 ## Project Structure
 
 ```
