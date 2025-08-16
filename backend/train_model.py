@@ -1,55 +1,55 @@
 import pandas as pd
-from sklearn.model_selection import train_test_split
+import numpy as np
+from sklearn.model_selection import train_test_split, cross_val_score
 from sklearn.ensemble import RandomForestClassifier
 from sklearn.preprocessing import StandardScaler
 import joblib
 import os
 
 def train_model():
-    try:
-        print("Starting model training...")
-        
-        # Load data with specific column names
-        data_path = 'data/pred_food.csv'
-        
-        # Define expected column names exactly as in your CSV
-        columns = [
-            'Food Name',
-            'Glycemic Index',
-            'Calories',
-            'Carbohydrates',
-            'Protein',
-            'Fat',
-            'Suitable for Diabetes',
-            'Suitable for Blood Pressure',
-            'Sodium Content',
-            'Potassium Content',
-            'Magnesium Content',
-            'Calcium Content',
-            'Fiber Content'
-        ]
-        
-        # Read CSV
-        df = pd.read_csv(data_path)
-        print("Available columns in dataset:", df.columns.tolist())
-        
-        # Select feature columns (excluding Food Name and target variables)
-        feature_columns = [
-            'Glycemic Index',
-            'Calories',
-            'Carbohydrates',
-            'Protein',
-            'Fat',
-            'Sodium Content',
-            'Potassium Content',
-            'Magnesium Content',
-            'Calcium Content',
-            'Fiber Content'
-        ]
-        
-        # Prepare features and target
-        X = df[feature_columns]
-        y = df['Suitable for Diabetes']
+    print("Loading dataset...")
+    df = pd.read_csv('data/pred_food.csv')
+    
+    # Select features for training
+    features = [
+        'Glycemic Index', 'Calories', 'Carbohydrates', 'Protein', 'Fat',
+        'Sodium Content', 'Potassium Content', 'Magnesium Content',
+        'Calcium Content', 'Fiber Content'
+    ]
+    
+    X = df[features]
+    y = df['Suitable for Diabetes']
+    
+    # Scale features
+    scaler = StandardScaler()
+    X_scaled = scaler.fit_transform(X)
+    
+    # Train model
+    print("Training model...")
+    model = RandomForestClassifier(
+        n_estimators=200,
+        max_depth=10,
+        random_state=42
+    )
+    
+    # Cross-validation
+    cv_scores = cross_val_score(model, X_scaled, y, cv=5)
+    print(f"Cross-validation scores: {cv_scores.mean():.4f} (+/- {cv_scores.std() * 2:.4f})")
+    
+    # Final training
+    X_train, X_test, y_train, y_test = train_test_split(X_scaled, y, test_size=0.2)
+    model.fit(X_train, y_train)
+    
+    # Save model and scaler
+    os.makedirs('models', exist_ok=True)
+    joblib.dump(model, 'models/diabetes_model.joblib')
+    joblib.dump(scaler, 'models/scaler.joblib')
+    joblib.dump(features, 'models/feature_names.joblib')
+    
+    print("Model trained and saved successfully!")
+
+if __name__ == "__main__":
+    train_model()
         
         # Scale features
         scaler = StandardScaler()
