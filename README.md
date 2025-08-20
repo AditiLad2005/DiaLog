@@ -1,76 +1,30 @@
 # DiaLog - Smart Diabetes Meal Analyzer 🍽️💊
 
-An intelligent web application for diabetes-friendly meal planning, blood sugar prediction, and personalized nutritional recommendations powered by Machine Learning.
+A full-stack web application that helps diabetic patients analyze meal safety using machine learning predictions based on their health profile and food nutritional data.
 
----
+## 🌟 Features
 
-## 🚀 Current Status & Features
+- **Smart Meal Analysis**: ML-powered predictions for meal safety
+- **Personalized Recommendations**: Tailored advice based on user health profile  
+- **Nutritional Information**: Detailed breakdown of calories, carbs, protein, etc.
+- **Real-time Search**: Instant food search with 400+ food items
+- **BMI Calculation**: Automatic BMI calculation and health insights
+- **Risk Assessment**: Clear safety indicators with confidence scores
 
-### ✅ Completed Features
-- **🤖 ML Model**: Random Forest classifier trained on Food Master Dataset
-- **🎯 Real-time Prediction**: Instant meal safety analysis with confidence scores
-- **🍎 Food Database**: 500+ Indian foods with nutritional information
-- **📊 Smart UI**: Responsive React interface with Tailwind CSS
-- **🧪 Model Testing**: Built-in testing interface for model validation
-- **📈 BMI Calculator**: Automatic BMI calculation and risk assessment
-- **🔍 Food Search**: Smart search and filtering for meal selection
+## 🏗️ Architecture
 
-### 🎯 Key Capabilities
-- Predicts meal safety for diabetic users based on:
-  - User profile (age, gender, BMI, blood sugar levels)
-  - Meal composition (nutritional values, glycemic index)
-  - Portion size and timing
-- Provides confidence scores (70-95% accuracy)
-- Generates personalized recommendations
-- Real-time nutritional analysis
+- **Frontend**: React.js with Tailwind CSS
+- **Backend**: FastAPI with Machine Learning model
+- **ML Model**: Random Forest Classifier
+- **Data**: Food Master Dataset with nutritional information
 
----
+## 📋 Prerequisites
 
-## 🏗️ Project Architecture
-
-```
-DiaLog/
-│
-├── frontend/                     # React + Tailwind UI
-│   ├── src/
-│   │   ├── components/
-│   │   │   ├── MealCard.jsx      # ✅ Main meal analyzer interface
-│   │   │   ├── ModelTestInterface.jsx # 🧪 Model testing UI
-│   │   │   ├── SafeMealSuggestions.jsx # Recommendation display
-│   │   │   └── MealLog.jsx       # Meal logging component
-│   │   ├── services/
-│   │   │   ├── api.js            # ✅ FastAPI communication
-│   │   │   └── firebase.js       # Firebase integration (optional)
-│   │   ├── App.jsx               # ✅ Main app with testing toggle
-│   │   └── index.jsx             # React entry point
-│   └── public/
-│
-├── backend/                      # FastAPI + ML Model
-│   ├── data/
-│   │   ├── Food_Master_Dataset_.csv  # ✅ Main food database
-│   │   └── User_Logs_Dataset.csv     # 🔄 Generated training data
-│   ├── models/
-│   │   ├── diabetes_model.joblib     # ✅ Trained RF classifier
-│   │   ├── scaler.joblib            # ✅ Feature scaler
-│   │   ├── feature_columns.joblib   # ✅ Feature definitions
-│   │   └── *_encoder.joblib         # ✅ Category encoders
-│   ├── main.py                      # ✅ FastAPI server with docs
-│   ├── train_model.py              # ✅ Model training script
-│   ├── test_model.py               # 🧪 Model validation script
-│   └── setup_new_model.py          # 🔧 Complete setup script
-│
-└── docs/                        # Documentation
-    └── api-endpoints.md         # API documentation
-```
-
----
-
-## 🚀 Quick Start Guide
-
-### Prerequisites
 - Python 3.8+ 
 - Node.js 16+
 - Git
+
+## 🚀 Quick Start
 
 ### 1. Clone & Setup
 ```bash
@@ -84,208 +38,166 @@ cd backend
 
 # Create virtual environment
 python -m venv venv
-source venv/bin/activate  # Windows: venv\Scripts\activate
+
+# Activate virtual environment
+# Windows:
+venv\Scripts\activate
+# Linux/Mac:
+source venv/bin/activate
 
 # Install dependencies
 pip install fastapi uvicorn pandas scikit-learn joblib numpy python-multipart
 
-# Ensure Food_Master_Dataset_.csv is in data/ directory
-# Train the model (creates synthetic user data if needed)
+# Train the ML model (creates synthetic user data)
 python train_model.py
 
 # Test model loading
 python test_model.py
 
 # Start API server
-uvicorn main:app --reload
+uvicorn main:app --reload --host 0.0.0.0 --port 8000
 ```
 
 ### 3. Frontend Setup (React + Tailwind)
 ```bash
-cd frontend
+cd ../frontend
 
 # Install dependencies
 npm install
 
-# Install additional packages
-npm install react react-dom react-router-dom tailwindcss react-icons
-
 # Start development server
-npm start
+npm run dev
 ```
 
 ### 4. Access the Application
-- **Frontend UI**: http://localhost:3000
+- **Frontend**: http://localhost:3000
+- **Backend API**: http://localhost:8000
 - **API Documentation**: http://localhost:8000/docs
-- **API Health**: http://localhost:8000/health
-
----
-
-## 🧪 Testing Your Model
-
-### Using the UI
-1. Open http://localhost:3000
-2. Click "🧪 Test Model" button in top-right
-3. Run the following tests:
-   - **API Health Check**: Verify model loading status
-   - **Foods Database**: Check available food items
-   - **Model Prediction**: Test with sample data
-
-### Using API Documentation
-1. Visit http://localhost:8000/docs
-2. Try the endpoints:
-   - `GET /health` - Check system status
-   - `GET /foods` - Get food list
-   - `POST /predict` - Test meal prediction
-
-### Manual Testing
-```bash
-# Test API health
-curl http://localhost:8000/health
-
-# Test prediction
-curl -X POST "http://localhost:8000/predict" \
-  -H "Content-Type: application/json" \
-  -d '{
-    "age": 35,
-    "gender": "Male",
-    "weight_kg": 70,
-    "height_cm": 175,
-    "fasting_sugar": 95,
-    "post_meal_sugar": 140,
-    "meal_taken": "Rice",
-    "portion_size": 1,
-    "portion_unit": "serving",
-    "time_of_day": "Lunch"
-  }'
-```
-
----
 
 ## 📊 API Endpoints
 
-| Endpoint | Method | Description | Status |
-|----------|--------|-------------|---------|
-| `/` | GET | Root endpoint with API info | ✅ |
-| `/health` | GET | Health check & model status | ✅ |
-| `/foods` | GET | Get all available foods | ✅ |
-| `/food/{name}` | GET | Get specific food details | ✅ |
-| `/predict` | POST | Predict meal safety | ✅ |
-| `/docs` | GET | Swagger UI documentation | ✅ |
-| `/redoc` | GET | ReDoc documentation | ✅ |
+### Health Check
+```bash
+GET /health
+```
 
----
+### Get Available Foods
+```bash
+GET /foods?search=chicken
+```
 
-## 🤖 Model Details
+### Predict Meal Safety
+```bash
+POST /predict
+Content-Type: application/json
 
-### Training Data
-- **Food Database**: 500+ Indian foods with nutritional data
-- **Synthetic User Logs**: 1000+ generated meal logs for training
-- **Features**: BMI, sugar levels, food GI, portion size, timing
+{
+  "age": 35,
+  "gender": "Male",
+  "weight_kg": 75.0,
+  "height_cm": 175.0,
+  "fasting_sugar": 95.0,
+  "post_meal_sugar": 130.0,
+  "meal_taken": "Boiled rice (Uble chawal)",
+  "time_of_day": "Lunch",
+  "portion_size": 1.0,
+  "portion_unit": "bowl"
+}
+```
 
-### Model Performance
+## 🧪 Model Details
+
 - **Algorithm**: Random Forest Classifier
-- **Accuracy**: ~85% on test data
-- **Features**: 14 key nutritional and user factors
-- **Confidence Scoring**: Probability-based confidence levels
+- **Features**: Age, gender, BMI, blood sugar levels, food nutritional data
+- **Training Data**: 2000+ synthetic samples based on real food data
+- **Accuracy**: ~85-90% on test data
+- **Safety Criteria**: Carb content, glycemic index, portion size, user health profile
 
-### Key Features Used
-1. Age, BMI, Gender (encoded)
-2. Fasting & Post-meal sugar levels
-3. Meal timing (encoded)
-4. Portion size (in grams)
-5. Food macronutrients (carbs, protein, fat, fiber)
-6. Glycemic Index & Glycemic Load
-7. Total calories
+## 📁 Project Structure
 
----
+```
+DiaLog/
+├── backend/
+│   ├── main.py              # FastAPI application
+│   ├── train_model.py       # ML model training
+│   ├── test_model.py        # Model testing utilities
+│   ├── data/
+│   │   └── Food_Master_Dataset_.csv
+│   ├── models/              # Trained model artifacts
+│   └── venv/               # Python virtual environment
+├── frontend/
+│   ├── src/
+│   │   ├── components/
+│   │   │   └── MealCard.jsx # Main UI component
+│   │   └── App.jsx
+│   ├── package.json
+│   └── public/
+└── README.md
+```
 
-## 🔧 Development Commands
+## 🔧 Troubleshooting
 
-### Backend
+### Backend Issues
+
+1. **Import Error**: Ensure virtual environment is activated
 ```bash
-# Train new model
+cd backend
+venv\Scripts\activate  # Windows
+source venv/bin/activate  # Linux/Mac
+```
+
+2. **Model Not Found**: Run the training script
+```bash
 python train_model.py
-
-# Test model loading
-python test_model.py
-
-# Run FastAPI server
-uvicorn main:app --reload
-
-# Complete setup from scratch
-python setup_new_model.py
 ```
 
-### Frontend
-```bash
-# Install dependencies
-npm install
+3. **Dataset Not Found**: Ensure `Food_Master_Dataset_.csv` is in `backend/data/`
 
-# Start development server
-npm start
+### Frontend Issues
 
-# Build for production
-npm run build
-```
+1. **CORS Error**: Make sure backend is running on port 8000
+2. **API Connection**: Check if backend health endpoint responds: http://localhost:8000/health
 
----
+## 🚧 Development
 
-## 📈 Next Steps & Roadmap
+### Adding New Foods
+1. Add entries to `Food_Master_Dataset_.csv`
+2. Retrain the model: `python train_model.py`
+3. Restart the API server
 
-### Phase 1: Core Features ✅
-- [x] ML model training and prediction
-- [x] FastAPI backend with documentation
-- [x] React frontend with testing interface
-- [x] Food database integration
+### Model Improvements
+- Adjust Random Forest parameters in `train_model.py`
+- Add new features to the feature engineering pipeline
+- Collect real user data for better training
 
-### Phase 2: Enhanced Features 🔄
-- [ ] User authentication with Firebase
-- [ ] Meal logging and history
-- [ ] Blood sugar trend visualization
-- [ ] Personalized meal recommendations
+## 📈 Future Enhancements
 
-### Phase 3: Advanced Features 📋
-- [ ] Mobile app (React Native)
-- [ ] Nutritionist dashboard
-- [ ] Integration with glucose monitors
-- [ ] Community features
-
----
+- [ ] User authentication and meal history
+- [ ] Mobile app development
+- [ ] Integration with fitness trackers
+- [ ] Doctor dashboard for patient monitoring
+- [ ] Multi-language support
+- [ ] Meal planning recommendations
 
 ## 🤝 Contributing
 
 1. Fork the repository
-2. Create feature branch: `git checkout -b feature/amazing-feature`
-3. Commit changes: `git commit -m 'Add amazing feature'`
-4. Push to branch: `git push origin feature/amazing-feature`
-5. Open a Pull Request
-
----
-
-## 📞 Support & Contact
-
-- **Issues**: Create an issue on GitHub
-- **Documentation**: Check `/docs` folder
-- **API Docs**: http://localhost:8000/docs when running
-
----
+2. Create a feature branch
+3. Make your changes
+4. Add tests if applicable
+5. Submit a pull request
 
 ## 📄 License
 
-This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.
+This project is licensed under the MIT License - see the LICENSE file for details.
 
----
+## 👥 Team
 
-## 🎉 Acknowledgments
+DiaLog Team - Diabetes Management Solution
 
-- Food Master Dataset contributors
-- scikit-learn and FastAPI communities
-- React and Tailwind CSS teams
-- All contributors and testers
+## 🙏 Acknowledgments
 
----
-
-**Last Updated**: December 2024  
-**Version**: 2.0.0  
-**Status**: 🚀 Production Ready
+- Food nutritional data from comprehensive food database
+- Machine learning libraries: scikit-learn, pandas, numpy
+- Frontend framework: React.js with Tailwind CSS
+- Backend framework: FastAPI
