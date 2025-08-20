@@ -1,19 +1,24 @@
 import React, { useState, useEffect } from 'react';
 import { saveMealLog } from '../services/firebase';   // Firestore save
-import { predictMealSafety } from '../services/api';  // FastAPI prediction
+import { predictMealSafety, fetchFoods } from '../services/api';  // FastAPI prediction
 import SafeMealSuggestions from './SafeMealSuggestions';  // Suggestions UI
 
 const MEAL_TIMES = ['Breakfast', 'Lunch', 'Dinner', 'Snack'];
-const UNITS = ['spoons', 'bowls', 'cups'];
+const UNITS = ['cup', 'bowl', 'spoon', 'g'];
+const GENDERS = ['Male', 'Female', 'Other'];
 
-export default function MealCard() {
+export default function MealLog() {
     const [formData, setFormData] = useState({
-        sugarFasting: '',
-        sugarPostLunch: '',
-        previousMeal: '',
-        quantity: '',
-        unit: 'bowls',
-        mealTime: 'Breakfast'
+        age: '',
+        gender: 'Male',
+        weight_kg: '',
+        height_cm: '',
+        fasting_sugar: '',
+        post_meal_sugar: '',
+        meal_taken: '',
+        portion_size: '',
+        portion_unit: 'bowl',
+        time_of_day: 'Breakfast'
     });
     
     const [loading, setLoading] = useState(false);
@@ -22,11 +27,17 @@ export default function MealCard() {
     const [meals, setMeals] = useState([]);
 
     useEffect(() => {
-        // Fetch meals list from backend
-        fetch('http://localhost:8000/foods')
-            .then(res => res.json())
-            .then(data => setMeals(data.foods))
-            .catch(() => setError('⚠️ Failed to load meal options'));
+        // Fetch meals list from backend using API service
+        const loadMeals = async () => {
+            try {
+                const data = await fetchFoods();
+                setMeals(data.foods);
+            } catch (err) {
+                setError('⚠️ Failed to load meal options');
+            }
+        };
+        
+        loadMeals();
     }, []);
 
     const handleSubmit = async (e) => {
@@ -35,19 +46,27 @@ export default function MealCard() {
         setError(null);
 
         try {
+            // Calculate BMI
+            const bmi = parseFloat(formData.weight_kg) / Math.pow(parseFloat(formData.height_cm)/100, 2);
+            
             // Call FastAPI prediction
             const result = await predictMealSafety({
-                sugar_fasting: parseFloat(formData.sugarFasting),
-                sugar_post_lunch: parseFloat(formData.sugarPostLunch),
-                previous_meal: formData.previousMeal,
-                quantity: parseFloat(formData.quantity),
-                unit: formData.unit,
-                meal_time: formData.mealTime
+                age: parseInt(formData.age),
+                gender: formData.gender,
+                weight_kg: parseFloat(formData.weight_kg),
+                height_cm: parseFloat(formData.height_cm),
+                fasting_sugar: parseFloat(formData.fasting_sugar),
+                post_meal_sugar: parseFloat(formData.post_meal_sugar),
+                meal_taken: formData.meal_taken,
+                portion_size: parseFloat(formData.portion_size),
+                portion_unit: formData.portion_unit,
+                time_of_day: formData.time_of_day
             });
 
             // Save log to Firebase
             await saveMealLog({
                 ...formData,
+                bmi: bmi.toFixed(1),
                 timestamp: new Date().toISOString(),
                 prediction: result
             });
@@ -65,6 +84,77 @@ export default function MealCard() {
             <h2 className="text-2xl font-bold mb-6">🍽️ Log Your Meal</h2>
             
             <form onSubmit={handleSubmit} className="space-y-6">
+                {/* User Information */}
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                    <div>
+                        <label className="block text-sm font-medium text-gray-700">
+                            Age (years)
+                        </label>
+                        <input
+                            type="number"
+                            value={formData.age}
+                            onChange={(e) => setFormData(prev => ({
+                                ...prev, age: e.target.value
+                            }))}
+                            className="mt-1 block w-full rounded-md border-gray-300 shadow-sm"
+                            required
+                            min="1"
+                        />
+                    </div>
+                    <div>
+                        <label className="block text-sm font-medium text-gray-700">
+                            Gender
+                        </label>
+                        <select
+                            value={formData.gender}
+                            onChange={(e) => setFormData(prev => ({
+                                ...prev, gender: e.target.value
+                            }))}
+                            className="mt-1 block w-full rounded-md border-gray-300 shadow-sm"
+                            required
+                        >
+                            {GENDERS.map(gender => (
+                                <option key={gender} value={gender}>{gender}</option>
+                            ))}
+                        </select>
+                    </div>
+                </div>
+                
+                {/* Weight & Height */}
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                    <div>
+                        <label className="block text-sm font-medium text-gray-700">
+                            Weight (kg)
+                        </label>
+                        <input
+                            type="number"
+                            value={formData.weight_kg}
+                            onChange={(e) => setFormData(prev => ({
+                                ...prev, weight_kg: e.target.value
+                            }))}
+                            className="mt-1 block w-full rounded-md border-gray-300 shadow-sm"
+                            required
+                            min="1"
+                            step="0.1"
+                        />
+                    </div>
+                    <div>
+                        <label className="block text-sm font-medium text-gray-700">
+                            Height (cm)
+                        </label>
+                        <input
+                            type="number"
+                            value={formData.height_cm}
+                            onChange={(e) => setFormData(prev => ({
+                                ...prev, height_cm: e.target.value
+                            }))}
+                            className="mt-1 block w-full rounded-md border-gray-300 shadow-sm"
+                            required
+                            min="1"
+                        />
+                    </div>
+                </div>
+
                 {/* Sugar Levels */}
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                     <div>
@@ -73,9 +163,9 @@ export default function MealCard() {
                         </label>
                         <input
                             type="number"
-                            value={formData.sugarFasting}
+                            value={formData.fasting_sugar}
                             onChange={(e) => setFormData(prev => ({
-                                ...prev, sugarFasting: e.target.value
+                                ...prev, fasting_sugar: e.target.value
                             }))}
                             className="mt-1 block w-full rounded-md border-gray-300 shadow-sm"
                             required
@@ -83,13 +173,13 @@ export default function MealCard() {
                     </div>
                     <div>
                         <label className="block text-sm font-medium text-gray-700">
-                            Post Lunch Sugar (mg/dL)
+                            Post Meal Sugar (mg/dL)
                         </label>
                         <input
                             type="number"
-                            value={formData.sugarPostLunch}
+                            value={formData.post_meal_sugar}
                             onChange={(e) => setFormData(prev => ({
-                                ...prev, sugarPostLunch: e.target.value
+                                ...prev, post_meal_sugar: e.target.value
                             }))}
                             className="mt-1 block w-full rounded-md border-gray-300 shadow-sm"
                             required
@@ -97,15 +187,24 @@ export default function MealCard() {
                     </div>
                 </div>
 
+                {/* BMI Display */}
+                {formData.weight_kg && formData.height_cm && (
+                    <div className="bg-blue-50 p-3 rounded-md text-blue-800">
+                        <p className="text-sm font-medium">
+                            BMI: {(formData.weight_kg / Math.pow(formData.height_cm/100, 2)).toFixed(1)}
+                        </p>
+                    </div>
+                )}
+
                 {/* Meal Selection */}
                 <div>
                     <label className="block text-sm font-medium text-gray-700">
-                        Previous Meal Taken
+                        Meal Taken
                     </label>
                     <select
-                        value={formData.previousMeal}
+                        value={formData.meal_taken}
                         onChange={(e) => setFormData(prev => ({
-                            ...prev, previousMeal: e.target.value
+                            ...prev, meal_taken: e.target.value
                         }))}
                         className="mt-1 block w-full rounded-md border-gray-300 shadow-sm"
                         required
@@ -117,17 +216,17 @@ export default function MealCard() {
                     </select>
                 </div>
 
-                {/* Quantity, Unit, Time */}
+                {/* Portion Size, Unit, Time */}
                 <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
                     <div>
                         <label className="block text-sm font-medium text-gray-700">
-                            Quantity
+                            Portion Size
                         </label>
                         <input
                             type="number"
-                            value={formData.quantity}
+                            value={formData.portion_size}
                             onChange={(e) => setFormData(prev => ({
-                                ...prev, quantity: e.target.value
+                                ...prev, portion_size: e.target.value
                             }))}
                             className="mt-1 block w-full rounded-md border-gray-300 shadow-sm"
                             required
@@ -140,9 +239,9 @@ export default function MealCard() {
                             Unit
                         </label>
                         <select
-                            value={formData.unit}
+                            value={formData.portion_unit}
                             onChange={(e) => setFormData(prev => ({
-                                ...prev, unit: e.target.value
+                                ...prev, portion_unit: e.target.value
                             }))}
                             className="mt-1 block w-full rounded-md border-gray-300 shadow-sm"
                             required
@@ -157,9 +256,9 @@ export default function MealCard() {
                             Time of Day
                         </label>
                         <select
-                            value={formData.mealTime}
+                            value={formData.time_of_day}
                             onChange={(e) => setFormData(prev => ({
-                                ...prev, mealTime: e.target.value
+                                ...prev, time_of_day: e.target.value
                             }))}
                             className="mt-1 block w-full rounded-md border-gray-300 shadow-sm"
                             required

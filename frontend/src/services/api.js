@@ -38,3 +38,12 @@ export const fetchFoods = async () => {
         throw error.response?.data || error.message;
     }
 };
+
+export const predictMealSafety = async (mealData) => {
+    try {
+        const response = await axios.post(`${API_BASE_URL}/predict`, mealData);
+        return response.data;
+    } catch (error) {
+        throw error.response?.data || error.message;
+    }
+};
