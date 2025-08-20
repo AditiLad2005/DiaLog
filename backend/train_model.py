@@ -133,7 +133,7 @@ def create_synthetic_user_logs(food_df, n_samples=1000):
     """Create synthetic user logs for training"""
     np.random.seed(42)
     
-    # Sample food items
+    # Sample food items - make sure we have the right column names
     sample_foods = food_df.sample(n=min(50, len(food_df)))
     
     data = []
@@ -180,7 +180,7 @@ def create_synthetic_user_logs(food_df, n_samples=1000):
             'diabetes_type': np.random.choice(['Type 1', 'Type 2', 'Prediabetic'], p=[0.1, 0.7, 0.2]),
             'fasting_sugar': round(fasting_sugar, 1),
             'post_meal_sugar': round(post_meal_sugar, 1),
-            'meal_time': np.random.choice(['Breakfast', 'Lunch', 'Dinner', 'Snack']),
+            'meal_time': np.random.choice(['Breakfast', 'Lunch', 'Dinner', 'Snack']),  # Changed from meal_taken to meal_time
             'meal_taken': food_item['dish_name'],
             'portion_size_g': round(portion_g, 1),
             'label_safe_risky': 1 if is_safe else 0

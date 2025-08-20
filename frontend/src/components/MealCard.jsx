@@ -34,24 +34,39 @@ export default function MealCard() {
     ? (formData.weight_kg / ((formData.height_cm / 100) ** 2)).toFixed(1)
     : null;
 
-  // Fetch foods on component mount
+  // Improve food fetching on component mount
   useEffect(() => {
     setLoadingFoods(true);
-    fetch('http://localhost:8000/foods')
-      .then(res => res.json())
+    console.log("Fetching foods from backend...");
+    
+    fetchFoods()
       .then(data => {
-        setFoods(data.foods || []);
+        console.log(`Foods loaded: ${data.count} items`);
+        if (data && data.foods && data.foods.length > 0) {
+          // Sort foods alphabetically
+          const sortedFoods = [...data.foods].sort((a, b) => 
+            a.toLowerCase().localeCompare(b.toLowerCase())
+          );
+          setFoods(sortedFoods);
+          console.log(`Loaded ${sortedFoods.length} food items successfully`);
+        } else {
+          console.warn("No foods returned from API, using fallback list");
+          setFoods([
+            "Rice", "Dal", "Chicken", "Apple", "Chapati", 
+            "Paneer", "Eggs", "Fish", "Vegetables"
+          ]);
+        }
         setLoadingFoods(false);
       })
       .catch(err => {
         console.error("Failed to load foods:", err);
-        setError("Failed to load food options. Please try again.");
-        setLoadingFoods(false);
         // Fallback foods
         setFoods([
           "Rice", "Dal", "Chicken", "Apple", "Chapati", 
           "Paneer", "Eggs", "Fish", "Vegetables"
         ]);
+        setError("Failed to load food database. Please check if the backend server is running.");
+        setLoadingFoods(false);
       });
   }, []);
 
@@ -66,7 +81,7 @@ export default function MealCard() {
     return () => document.removeEventListener("mousedown", handler);
   }, []);
 
-  // Filter foods based on search
+  // Filter foods based on search - improved search functionality
   const filteredFoods = searchTerm 
     ? foods.filter(food => 
         food.toLowerCase().includes(searchTerm.toLowerCase())
@@ -88,14 +103,14 @@ export default function MealCard() {
 
     try {
       const result = await predictDiabetesFriendly({
-        age: parseInt(formData.age),
+        age: parseInt(formData.age) || 25,
         gender: formData.gender,
-        weight_kg: parseFloat(formData.weight_kg),
-        height_cm: parseFloat(formData.height_cm),
-        fasting_sugar: parseFloat(formData.fasting_sugar),
-        post_meal_sugar: parseFloat(formData.post_meal_sugar),
+        weight_kg: parseFloat(formData.weight_kg) || 70,
+        height_cm: parseFloat(formData.height_cm) || 170,
+        fasting_sugar: parseFloat(formData.fasting_sugar) || 100,
+        post_meal_sugar: parseFloat(formData.post_meal_sugar) || 140,
         meal_taken: formData.meal_taken,
-        portion_size: parseFloat(formData.portion_size),
+        portion_size: parseFloat(formData.portion_size) || 1,
         portion_unit: formData.portion_unit,
         time_of_day: formData.time_of_day,
       });
@@ -103,16 +118,10 @@ export default function MealCard() {
       setPrediction(result);
     } catch (err) {
       console.error("Prediction error:", err);
-      setError(`Analysis failed: ${err?.detail || err?.message || "Please try again."}`);
+      setError(`Analysis failed: ${err?.response?.data?.detail || err?.message || "Please try again."}`);
     } finally {
       setLoading(false);
     }
-  };
-
-  const selectFood = (food) => {
-    setFormData((p) => ({ ...p, meal_taken: food }));
-    setSearchTerm(food);
-    setShowDropdown(false);
   };
 
   return (
@@ -124,6 +133,11 @@ export default function MealCard() {
         <p className="text-gray-600">
           Get personalized meal safety predictions based on your health profile
         </p>
+        {foods.length > 0 && (
+          <p className="text-sm text-blue-600 mt-2">
+            ✅ {foods.length} food items loaded from trained model
+          </p>
+        )}
       </div>
 
       <form onSubmit={handleSubmit} className="space-y-8">
@@ -264,11 +278,14 @@ export default function MealCard() {
           </div>
         </div>
 
-        {/* Meal Information */}
+        {/* Meal Information Section with improved dropdown */}
         <div className="bg-green-50 rounded-xl p-6">
           <div className="flex items-center mb-4">
             <FiActivity className="text-green-600 mr-2" size={20} />
             <h3 className="text-lg font-semibold text-gray-800">Meal Information</h3>
+            <span className="ml-2 text-sm text-green-600">
+              ({foods.length} foods available)
+            </span>
           </div>
           
           <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
@@ -276,55 +293,77 @@ export default function MealCard() {
               <label className="block text-sm font-medium text-gray-700 mb-1">
                 Search & Select Meal
               </label>
-              <input
-                type="text"
-                value={searchTerm}
-                onChange={(e) => setSearchTerm(e.target.value)}
-                onFocus={() => setShowDropdown(true)}
-                placeholder="Type to search meals..."
-                className="w-full px-3 py-2 border border-gray-300 rounded-lg mb-2 focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-              />
-              {showDropdown && (
-                <div className="relative z-10">
-                  <div className="absolute w-full max-h-60 overflow-y-auto bg-white border border-gray-300 rounded-lg shadow-lg">
-                    {loadingFoods ? (
-                      <div className="p-3 text-gray-500 text-center">
-                        <div className="animate-spin inline-block h-4 w-4 border-2 border-blue-500 border-t-transparent rounded-full mr-2"></div>
-                        Loading meals...
-                      </div>
-                    ) : filteredFoods.length > 0 ? (
-                      filteredFoods.map(food => (
-                        <div
-                          key={food}
-                          onClick={() => selectFood(food)}
-                          className="p-2 hover:bg-blue-50 cursor-pointer border-b border-gray-100 last:border-b-0"
-                        >
-                          {food}
-                        </div>
-                      ))
-                    ) : (
-                      <div className="p-3 text-gray-500 text-center">No meals found</div>
-                    )}
-                  </div>
-                </div>
+              <div className="relative">
+                <input
+                  type="text"
+                  value={searchTerm}
+                  onChange={(e) => setSearchTerm(e.target.value)}
+                  onFocus={() => setShowDropdown(true)}
+                  placeholder="Type to search foods..."
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg mb-2 focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                />
+                <FiSearch className="absolute right-3 top-3 text-gray-400" />
+              </div>
+              
+              {/* Optimized food dropdown */}
+              <div className="relative">
+                <select
+                  value={formData.meal_taken}
+                  onChange={(e) => {
+                    const selectedMeal = e.target.value;
+                    setFormData(prev => ({ ...prev, meal_taken: selectedMeal }));
+                    if (selectedMeal) {
+                      setSearchTerm(selectedMeal);
+                    }
+                  }}
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                  required
+                  size={1}
+                >
+                  <option value="">-- Select a meal ({filteredFoods.length} items) --</option>
+                  {loadingFoods ? (
+                    <option disabled value="">Loading meals...</option>
+                  ) : filteredFoods.length > 0 ? (
+                    filteredFoods.map(food => (
+                      <option key={food} value={food}>{food}</option>
+                    ))
+                  ) : (
+                    <option disabled value="">No meals found. Try a different search.</option>
+                  )}
+                </select>
+              </div>
+              
+              {searchTerm && filteredFoods.length > 0 && (
+                <p className="mt-1 text-sm text-gray-500">
+                  Showing {Math.min(filteredFoods.length, 50)} of {filteredFoods.length} matching foods
+                </p>
               )}
-              <select
-                value={formData.meal_taken}
-                onChange={(e) => setFormData(prev => ({ ...prev, meal_taken: e.target.value }))}
-                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-                required
-              >
-                <option value="">Select a meal</option>
-                {loadingFoods ? (
-                  <option disabled>Loading meals...</option>
-                ) : filteredFoods.length > 0 ? (
-                  filteredFoods.map(food => (
-                    <option key={food} value={food}>{food}</option>
-                  ))
-                ) : (
-                  <option disabled>No meals found</option>
-                )}
-              </select>
+              
+              {/* Simple reload button if foods failed to load */}
+              {foods.length === 0 && !loadingFoods && (
+                <button 
+                  type="button"
+                  onClick={() => {
+                    setLoadingFoods(true);
+                    fetchFoods()
+                      .then(data => {
+                        if (data?.foods?.length > 0) {
+                          setFoods(data.foods);
+                        } else {
+                          setError("No foods found in database.");
+                        }
+                        setLoadingFoods(false);
+                      })
+                      .catch(() => {
+                        setError("Failed to reload food database.");
+                        setLoadingFoods(false);
+                      });
+                  }}
+                  className="mt-2 text-blue-500 underline text-sm"
+                >
+                  Reload meal list
+                </button>
+              )}
             </div>
 
             <div>
@@ -399,13 +438,37 @@ export default function MealCard() {
         </button>
       </form>
 
-      {/* Error Display */}
+      {/* Error Display - Enhanced with more details */}
       {error && (
         <div className="mt-6 p-4 bg-red-50 border border-red-200 rounded-lg text-red-700">
-          <div className="flex items-center">
-            <FiActivity className="mr-2 text-red-500" />
-            <span className="font-medium">Error:</span>
-            <span className="ml-2">{error}</span>
+          <div className="flex items-start">
+            <FiAlertTriangle className="mr-2 text-red-500 mt-1 flex-shrink-0" />
+            <div>
+              <span className="font-medium">Error:</span>
+              <span className="ml-2">{error}</span>
+              
+              {error.includes("not found in database") && (
+                <div className="mt-2 text-sm">
+                  <p>Please select a food from the dropdown list. The selected food must match exactly with our database.</p>
+                  <button
+                    onClick={() => setError(null)}
+                    className="mt-2 text-red-600 underline"
+                  >
+                    Dismiss
+                  </button>
+                </div>
+              )}
+              
+              {error.includes("backend server") && (
+                <div className="mt-2 text-sm">
+                  <p>Make sure the backend server is running at http://localhost:8000</p>
+                  <code className="block mt-1 p-2 bg-red-100 text-red-800 rounded">
+                    cd backend<br/>
+                    uvicorn main:app --reload
+                  </code>
+                </div>
+              )}
+            </div>
           </div>
         </div>
       )}

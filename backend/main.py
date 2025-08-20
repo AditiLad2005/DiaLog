@@ -1,14 +1,47 @@
 # backend/main.py
 
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI, HTTPException, Query
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 import pandas as pd
 import joblib
-import os
 import numpy as np
+import os
+from typing import Optional, List, Dict, Any
+from pathlib import Path
 
-app = FastAPI(title="DiaLog API - Diabetes Meal Safety Predictor")
+# Create FastAPI app
+app = FastAPI(
+    title="DiaLog API - Diabetes Meal Safety Predictor",
+    description="""
+    ## DiaLog API for Diabetes Meal Safety Prediction
+
+    This API provides endpoints to:
+    * 🍽️ **Predict meal safety** for diabetic users
+    * 📊 **Get nutritional information** for foods
+    * 🥗 **Fetch available foods** from the database
+    * ❤️ **Check API health** and model status
+
+    ### Model Information
+    - Uses Random Forest Classifier trained on food nutritional data
+    - Considers user BMI, sugar levels, and meal timing
+    - Provides confidence scores and recommendations
+
+    ### Usage
+    1. Check `/health` to verify API is running
+    2. Use `/foods` to get available food options
+    3. Send meal data to `/predict` for safety analysis
+    """,
+    version="2.0.0",
+    contact={
+        "name": "DiaLog Team",
+        "email": "team@dialog.com",
+    },
+    license_info={
+        "name": "MIT",
+        "url": "https://opensource.org/licenses/MIT",
+    },
+)
 
 app.add_middleware(
     CORSMiddleware,
@@ -18,27 +51,36 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
+# Data and model paths
+BASE_DIR = Path(__file__).resolve().parent
+DATA_DIR = BASE_DIR / "data"
+MODEL_DIR = BASE_DIR / "models"
+
+# Load the food dataset directly
+try:
+    food_df = pd.read_csv(DATA_DIR / "Food_Master_Dataset_.csv")
+    print(f"Loaded {len(food_df)} foods from dataset")
+except Exception as e:
+    print(f"Error loading food dataset: {e}")
+    food_df = pd.DataFrame()
+
 # Global variables for model artifacts
 model = None
 scaler = None
 feature_columns = None
-food_df = None
 gender_encoder = None
 meal_time_encoder = None
 
 # Load models and data
 def load_model_artifacts():
-    global model, scaler, feature_columns, food_df, gender_encoder, meal_time_encoder
+    global model, scaler, feature_columns, gender_encoder, meal_time_encoder
     
     try:
-        model = joblib.load('models/diabetes_model.joblib')
-        scaler = joblib.load('models/scaler.joblib')
-        feature_columns = joblib.load('models/feature_columns.joblib')
-        gender_encoder = joblib.load('models/gender_encoder.joblib')
-        meal_time_encoder = joblib.load('models/meal_time_encoder.joblib')
-        
-        food_df = pd.read_csv('data/Food_Master_Dataset_.csv')
-        food_df.set_index('dish_name', inplace=True)
+        model = joblib.load(MODEL_DIR / "diabetes_model.joblib")
+        scaler = joblib.load(MODEL_DIR / "scaler.joblib")
+        feature_columns = joblib.load(MODEL_DIR / "feature_columns.joblib")
+        gender_encoder = joblib.load(MODEL_DIR / "gender_encoder.joblib")
+        meal_time_encoder = joblib.load(MODEL_DIR / "meal_time_encoder.joblib")
         
         print("✅ All model artifacts loaded successfully!")
         return True
@@ -92,194 +134,220 @@ def convert_portion_to_grams(portion_size: float, portion_unit: str, serving_siz
     base_grams = unit_conversions.get(portion_unit.lower(), serving_size_g)
     return portion_size * base_grams
 
-@app.get("/")
+@app.get("/", 
+         summary="Root endpoint", 
+         description="Basic API information and status")
 def root():
     return {
         "status": "DiaLog API Running!",
+        "version": "2.0.0",
         "model_loaded": model is not None,
-        "food_items_available": len(food_df) if food_df is not None else 0
+        "food_items_available": len(food_df) if food_df is not None else 0,
+        "endpoints": {
+            "health": "/health - Check API health",
+            "foods": "/foods - Get available foods",
+            "predict": "/predict - Predict meal safety",
+            "docs": "/docs - API documentation"
+        }
     }
 
-@app.get("/foods")
-def get_available_foods():
-    """Get list of available foods for dropdown"""
-    if food_df is None:
-        return {"foods": ["Rice", "Dal", "Chicken", "Apple", "Chapati"]}
+@app.get("/health", response_model=HealthResponse, tags=["General"])
+def health_check():
+    """Check if the API and models are properly loaded."""
+    model_loaded = model is not None and scaler is not None and feature_columns is not None
+    foods_loaded = len(food_df) if not food_df.empty else 0
     
-    # Return foods sorted by name
-    foods = sorted(food_df.index.tolist())
-    return {"foods": foods[:100]}  # Limit to first 100 for performance
+    return {
+        "status": "healthy" if model_loaded else "degraded",
+        "message": "API is running normally" if model_loaded else "Model failed to load",
+        "model_loaded": model_loaded,
+        "foods_loaded": foods_loaded,
+        "version": "1.0.0"
+    }
 
-@app.get("/food/{food_name}")
-def get_food_details(food_name: str):
-    """Get nutritional details of a specific food"""
-    if food_df is None:
+@app.get("/foods", tags=["Food"])
+def get_foods():
+    """Get all available foods from the dataset."""
+    if food_df.empty:
         raise HTTPException(status_code=500, detail="Food database not loaded")
     
+    # Return all unique food names alphabetically
     try:
-        food_info = food_df.loc[food_name]
+        food_list = sorted(food_df['dish_name'].unique().tolist())
         return {
-            "name": food_name,
-            "serving_size_g": food_info['serving_size_g'],
-            "calories": food_info['calories_kcal'],
-            "carbs": food_info['carbs_g'],
-            "protein": food_info['protein_g'],
-            "fat": food_info['fat_g'],
-            "fiber": food_info['fiber_g'],
-            "glycemic_index": food_info['glycemic_index'],
-            "avoid_for_diabetic": food_info['avoid_for_diabetic']
+            "success": True,
+            "count": len(food_list),
+            "foods": food_list,
+            "message": f"Retrieved {len(food_list)} foods"
         }
-    except KeyError:
-        raise HTTPException(status_code=404, detail=f"Food '{food_name}' not found")
-
-@app.post("/predict", response_model=PredictionResponse)
-def predict_meal_safety(data: MealLogInput):
-    """Main prediction endpoint"""
-    
-    if model is None:
-        # Return dummy response if model not loaded
-        return PredictionResponse(
-            is_safe=True,
-            confidence=0.7,
-            risk_level="Medium",
-            bmi=22.0,
-            portion_analysis={"status": "Model not loaded"},
-            nutritional_info={"calories": 200, "carbs": 30},
-            recommendations=[{"name": "Apple", "reason": "Low GI"}],
-            message="Model loading... Using dummy response"
-        )
-    
-    try:
-        # Calculate BMI
-        bmi = calculate_bmi(data.weight_kg, data.height_cm)
-        
-        # Get food information
-        if data.meal_taken not in food_df.index:
-            raise HTTPException(status_code=404, detail=f"Food '{data.meal_taken}' not found in database")
-        
-        food_info = food_df.loc[data.meal_taken]
-        
-        # Convert portion to grams
-        portion_g = convert_portion_to_grams(
-            data.portion_size, 
-            data.portion_unit, 
-            food_info['serving_size_g']
-        )
-        
-        # Calculate scaled nutritional values
-        serving_ratio = portion_g / food_info['serving_size_g']
-        scaled_nutrition = {
-            'calories': food_info['calories_kcal'] * serving_ratio,
-            'carbs_g': food_info['carbs_g'] * serving_ratio,
-            'protein_g': food_info['protein_g'] * serving_ratio,
-            'fat_g': food_info['fat_g'] * serving_ratio,
-            'fiber_g': food_info['fiber_g'] * serving_ratio
-        }
-        
-        # Prepare features for prediction
-        try:
-            gender_encoded = gender_encoder.transform([data.gender])[0]
-        except:
-            gender_encoded = 0  # fallback
-            
-        try:
-            meal_time_encoded = meal_time_encoder.transform([data.time_of_day])[0]
-        except:
-            meal_time_encoded = 0  # fallback
-        
-        # Create feature vector
-        features = [
-            data.age,
-            bmi,
-            gender_encoded,
-            data.fasting_sugar,
-            data.post_meal_sugar,
-            meal_time_encoded,
-            portion_g,
-            scaled_nutrition['carbs_g'],
-            scaled_nutrition['protein_g'],
-            scaled_nutrition['fat_g'],
-            scaled_nutrition['fiber_g'],
-            food_info['glycemic_index'],
-            food_info['glycemic_load'] * serving_ratio,
-            scaled_nutrition['calories']
-        ]
-        
-        # Make prediction
-        features_scaled = scaler.transform([features])
-        prediction = model.predict(features_scaled)[0]
-        probability = model.predict_proba(features_scaled)[0]
-        confidence = float(max(probability))
-        
-        # Determine risk level
-        if confidence > 0.8:
-            risk_level = "Low" if prediction == 1 else "High"
-        elif confidence > 0.6:
-            risk_level = "Medium"
-        else:
-            risk_level = "Uncertain"
-        
-        # Generate recommendations
-        recommendations = generate_recommendations(
-            food_info, 
-            prediction, 
-            portion_g, 
-            food_info['serving_size_g']
-        )
-        
-        # Portion analysis
-        portion_analysis = {
-            "portion_grams": round(portion_g, 1),
-            "servings": round(serving_ratio, 2),
-            "status": "Normal" if serving_ratio <= 2.0 else "Large",
-            "recommended_max_g": food_info['serving_size_g'] * 2
-        }
-        
-        return PredictionResponse(
-            is_safe=bool(prediction),
-            confidence=round(confidence, 3),
-            risk_level=risk_level,
-            bmi=round(bmi, 1),
-            portion_analysis=portion_analysis,
-            nutritional_info=scaled_nutrition,
-            recommendations=recommendations,
-            message="✅ Analysis complete" if prediction else "⚠️ Exercise caution with this meal",
-            meal_taken=data.meal_taken
-        )
-        
     except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Prediction error: {str(e)}")
+        raise HTTPException(status_code=500, detail=f"Failed to retrieve foods: {str(e)}")
 
-def generate_recommendations(food_info, is_safe, portion_g, serving_size_g):
-    """Generate meal recommendations"""
+@app.get("/food/{name}", tags=["Food"])
+def get_food(name: str):
+    """Get details about a specific food item."""
+    if food_df.empty:
+        raise HTTPException(status_code=500, detail="Food database not loaded")
+    
+    # Case-insensitive exact match search first
+    food_info = food_df[food_df['dish_name'].str.lower() == name.lower()]
+    
+    # If not found, try partial match
+    if len(food_info) == 0:
+        food_info = food_df[food_df['dish_name'].str.lower().str.contains(name.lower())]
+    
+    if len(food_info) == 0:
+        raise HTTPException(status_code=404, detail=f"Food '{name}' not found in database")
+    
+    # Get the first matching food (best match)
+    food_data = food_info.iloc[0].to_dict()
+    
+    # Remove unnecessary fields for cleaner response
+    if 'avoid_for_diabetic' in food_data:
+        food_data['avoid_for_diabetic'] = food_data['avoid_for_diabetic'].lower() == 'yes'
+    
+    return {
+        "success": True,
+        "food": food_data
+    }
+
+@app.post("/predict", tags=["Prediction"])
+async def predict_meal(request: MealLogInput):
+    """Predict if a meal is diabetes-friendly based on user data and food."""
+    if model is None or scaler is None or feature_columns is None:
+        raise HTTPException(status_code=500, detail="Model not loaded")
+    
+    if food_df.empty:
+        raise HTTPException(status_code=500, detail="Food database not loaded")
+    
+    # Find the food in the database (case insensitive)
+    food_info = food_df[food_df['dish_name'].str.lower() == request.meal_taken.lower()]
+    
+    # If exact match not found, try partial match
+    if len(food_info) == 0:
+        food_info = food_df[food_df['dish_name'].str.lower().str.contains(request.meal_taken.lower())]
+        
+        if len(food_info) > 0:
+            # Use the first match and inform the user
+            print(f"Using closest match: {food_info.iloc[0]['dish_name']} for query: {request.meal_taken}")
+    
+    if len(food_info) == 0:
+        raise HTTPException(status_code=404, detail=f"Food '{request.meal_taken}' not found in database")
+    
+    # Get the first matching food
+    food_data = food_info.iloc[0]
+    
+    # Calculate BMI
+    bmi = request.weight_kg / ((request.height_cm / 100) ** 2)
+    
+    # Prepare input features in the correct order as used during training
+    input_data = {
+        'age': request.age,
+        'gender': request.gender,
+        'bmi': bmi,
+        'fasting_sugar': request.fasting_sugar,
+        'post_meal_sugar': request.post_meal_sugar,
+        'glycemic_index': food_data['glycemic_index'],
+        'glycemic_load': food_data['glycemic_load'],
+        'carbs_g': food_data['carbs_g'] * request.portion_size,
+        'protein_g': food_data['protein_g'] * request.portion_size,
+        'fat_g': food_data['fat_g'] * request.portion_size,
+        'fiber_g': food_data['fiber_g'] * request.portion_size,
+        'calories_kcal': food_data['calories_kcal'] * request.portion_size,
+        'time_of_day': request.time_of_day,
+        'portion_size': request.portion_size
+    }
+    
+    # Create a DataFrame with the correct feature order
+    input_df = pd.DataFrame([{col: input_data.get(col, 0) for col in feature_columns}])
+    
+    # Scale the input features
+    scaled_input = scaler.transform(input_df)
+    
+    # Get prediction and probability
+    prediction = model.predict(scaled_input)[0]
+    probabilities = model.predict_proba(scaled_input)[0]
+    confidence = max(probabilities)
+    
+    # Determine risk level based on confidence and prediction
+    if prediction == 1:  # Safe
+        if confidence > 0.85:
+            risk_level = "Low Risk"
+        elif confidence > 0.70:
+            risk_level = "Moderate Risk"
+        else:
+            risk_level = "Moderate-High Risk"
+    else:  # Not safe
+        if confidence > 0.85:
+            risk_level = "High Risk"
+        elif confidence > 0.70:
+            risk_level = "Moderate-High Risk"
+        else:
+            risk_level = "Moderate Risk"
+    
+    # Create a personalized message
+    if prediction == 1:
+        if confidence > 0.85:
+            message = f"This {food_data['dish_name']} appears safe for your current blood sugar levels. Maintain portion control."
+        else:
+            message = f"This {food_data['dish_name']} is likely acceptable, but consider reducing the portion size or pairing with fiber-rich vegetables."
+    else:
+        if confidence > 0.85:
+            message = f"This {food_data['dish_name']} may significantly impact your blood sugar levels. Consider an alternative or reduce portion."
+        else:
+            message = f"This {food_data['dish_name']} may affect your blood sugar levels. Consider a smaller portion or balance with protein and fiber."
+    
+    # Include nutritional information for the specific portion
+    nutritional_info = {
+        "calories": food_data['calories_kcal'] * request.portion_size,
+        "carbs_g": food_data['carbs_g'] * request.portion_size,
+        "protein_g": food_data['protein_g'] * request.portion_size,
+        "fat_g": food_data['fat_g'] * request.portion_size,
+        "fiber_g": food_data['fiber_g'] * request.portion_size
+    }
+    
+    # Get recommendations based on food properties
     recommendations = []
     
-    if not is_safe:
-        recommendations.append({
-            "name": "Reduce portion size",
-            "reason": f"Try {serving_size_g}g instead of {portion_g}g"
-        })
-        
-        if food_info['avoid_for_diabetic'] == 'Yes':
-            recommendations.append({
-                "name": "Consider alternatives",
-                "reason": "This food is not recommended for diabetics"
-            })
+    if not prediction:
+        # If not safe, recommend alternatives
+        if 'recommended_alternatives' in food_data and isinstance(food_data['recommended_alternatives'], str):
+            alt_foods = [alt.strip() for alt in food_data['recommended_alternatives'].split(',')]
+            
+            for alt in alt_foods[:3]:  # Limit to top 3 alternatives
+                alt_info = food_df[food_df['dish_name'] == alt]
+                if len(alt_info) > 0:
+                    alt_data = alt_info.iloc[0]
+                    recommendations.append({
+                        "name": alt,
+                        "reason": f"Lower glycemic index ({alt_data['glycemic_index']} vs {food_data['glycemic_index']})"
+                    })
     
     # Add general recommendations
-    if food_info['glycemic_index'] > 70:
+    if food_data['fiber_g'] < 2:
         recommendations.append({
-            "name": "Pair with protein/fiber",
-            "reason": "High GI food - add protein or fiber to slow absorption"
+            "name": "Add a side salad",
+            "reason": "Increase fiber intake to slow sugar absorption"
         })
     
-    # Safe alternatives from the same meal category
-    if food_df is not None:
-        safe_foods = food_df[
-            (food_df['avoid_for_diabetic'] != 'Yes') & 
-            (food_df['glycemic_index'] < 55) &
-            (food_df['meal_time_category'] == food_info['meal_time_category'])
-        ].head(3)
+    if request.time_of_day == "Dinner" and food_data['carbs_g'] > 30:
+        recommendations.append({
+            "name": "Consider smaller portion for dinner",
+            "reason": "High carb meals are better consumed earlier in the day"
+        })
+    
+    # Return the prediction result
+    return {
+        "is_safe": bool(prediction),
+        "confidence": float(confidence),
+        "risk_level": risk_level,
+        "message": message,
+        "bmi": round(bmi, 1),
+        "nutritional_info": nutritional_info,
+        "recommendations": recommendations
+    }
+
+# Run with: uvicorn main:app --reload
         
         for name, row in safe_foods.iterrows():
             if name != food_info.name:
@@ -290,11 +358,36 @@ def generate_recommendations(food_info, is_safe, portion_g, serving_size_g):
     
     return recommendations[:5]  # Limit to 5 recommendations
 
-@app.get("/health")
+@app.get("/health",
+         summary="Health check",
+         description="Check API health status and model loading status")
 def health_check():
     return {
         "status": "healthy",
+        "timestamp": pd.Timestamp.now().isoformat(),
         "model_loaded": model is not None,
         "food_database_loaded": food_df is not None,
-        "total_foods": len(food_df) if food_df is not None else 0
+        "total_foods": len(food_df) if food_df is not None else 0,
+        "model_features": len(feature_columns) if feature_columns else 0,
+        "encoders_loaded": {
+            "gender": gender_encoder is not None,
+            "meal_time": meal_time_encoder is not None
+        }
     }
+
+@app.get("/foods")
+async def get_foods():
+    """Get all available foods from the trained model dataset"""
+    try:
+        # Return ALL food items from the Food Master Dataset
+        food_list = food_df['dish_name'].unique().tolist()
+        food_count = len(food_list)
+        
+        return {
+            "success": True,
+            "count": food_count,
+            "foods": food_list,
+            "message": f"Retrieved all {food_count} food items from trained model"
+        }
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Failed to retrieve foods: {str(e)}")
