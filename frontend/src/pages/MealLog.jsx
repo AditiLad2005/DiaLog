@@ -7,27 +7,20 @@ import {
   ArrowPathIcon,
   CheckIcon,
   ExclamationTriangleIcon,
-  UserIcon,
-  HeartIcon,
   CloudIcon
 } from '@heroicons/react/24/outline';
+import { addDoc, collection } from "firebase/firestore";
+import { db, auth } from "../services/firebase";
 
 const MealLog = () => {
   const [formData, setFormData] = useState({
-    // Blood sugar readings
     fastingSugar: '',
     postMealSugar: '',
-    
-    // Meal information (Dataset A lookup)
     mealTaken: '',
     portionAmount: '',
     portionUnit: 'cup',
     timeOfDay: '',
-    
-    // Additional notes
     notes: '',
-    
-    // Optional: custom meal if not in Dataset A
     customMeal: {
       name: '',
       estimatedCarbs: '',
@@ -39,109 +32,68 @@ const MealLog = () => {
   const [prediction, setPrediction] = useState(null);
   const [showCustomMeal, setShowCustomMeal] = useState(false);
 
-  // Enhanced meal options (Dataset A foods)
+  // Save log to Firestore
+  const saveLog = async (inputData, result) => {
+    try {
+      const user = auth.currentUser;
+      await addDoc(collection(db, "logs"), {
+        userId: user?.uid || "guest",
+        ...inputData,
+        ...result,
+        createdAt: new Date()
+      });
+    } catch (error) {
+      console.error("Error saving log: ", error);
+    }
+  };
+
+  // Meal options
   const mealOptions = [
-    // Traditional Indian Foods
-    'Basmati Rice with Dal',
-    'Brown Rice with Dal',
-    'Quinoa with Dal',
-    'Chapati (Wheat)',
-    'Chapati (Multigrain)',
-    'Jowar Roti',
-    'Bajra Roti',
-    
-    // South Indian
-    'Idli with Sambar',
-    'Dosa (Plain)',
-    'Dosa (Ragi)',
-    'Uttapam',
-    'Upma',
-    'Poha',
-    
-    // Breakfast Options
-    'Oats (Plain)',
-    'Oats with Fruits',
-    'Daliya (Broken Wheat)',
-    'Besan Chilla',
-    
-    // Protein Sources
-    'Chicken Curry',
-    'Fish Curry',
-    'Paneer Curry',
-    'Egg Curry',
-    'Rajma',
-    'Chole',
-    
-    // Vegetables
-    'Mixed Vegetables',
-    'Palak Sabzi',
-    'Bhindi Sabzi',
-    'Aloo Gobi',
-    
-    // Snacks
-    'Fruit Salad',
-    'Yogurt (Plain)',
-    'Nuts (Mixed)',
-    'Sprouts Salad',
-    
-    // Custom option
+    'Basmati Rice with Dal','Brown Rice with Dal','Quinoa with Dal',
+    'Chapati (Wheat)','Chapati (Multigrain)','Jowar Roti','Bajra Roti',
+    'Idli with Sambar','Dosa (Plain)','Dosa (Ragi)','Uttapam','Upma','Poha',
+    'Oats (Plain)','Oats with Fruits','Daliya (Broken Wheat)','Besan Chilla',
+    'Chicken Curry','Fish Curry','Paneer Curry','Egg Curry','Rajma','Chole',
+    'Mixed Vegetables','Palak Sabzi','Bhindi Sabzi','Aloo Gobi',
+    'Fruit Salad','Yogurt (Plain)','Nuts (Mixed)','Sprouts Salad',
     'Other (Custom)'
   ];
 
   const portionUnits = [
-    { value: 'cup', label: 'Cup' },
-    { value: 'bowl', label: 'Bowl' },
-    { value: 'plate', label: 'Plate' },
-    { value: 'katori', label: 'Katori' },
-    { value: 'spoon', label: 'Tablespoon' },
-    { value: 'piece', label: 'Piece' },
-    { value: 'slice', label: 'Slice' },
-    { value: 'glass', label: 'Glass' }
+    { value: 'cup', label: 'Cup' },{ value: 'bowl', label: 'Bowl' },
+    { value: 'plate', label: 'Plate' },{ value: 'katori', label: 'Katori' },
+    { value: 'spoon', label: 'Tablespoon' },{ value: 'piece', label: 'Piece' },
+    { value: 'slice', label: 'Slice' },{ value: 'glass', label: 'Glass' }
   ];
 
   const timeOptions = [
-    'Early Morning (5-7 AM)',
-    'Breakfast (7-9 AM)',
-    'Mid-Morning (9-11 AM)',
-    'Lunch (11 AM-2 PM)',
-    'Afternoon (2-4 PM)',
-    'Evening (4-6 PM)',
-    'Dinner (6-9 PM)',
-    'Late Night (9-11 PM)'
+    'Early Morning (5-7 AM)','Breakfast (7-9 AM)','Mid-Morning (9-11 AM)',
+    'Lunch (11 AM-2 PM)','Afternoon (2-4 PM)','Evening (4-6 PM)',
+    'Dinner (6-9 PM)','Late Night (9-11 PM)'
   ];
 
   const handleInputChange = (e) => {
     const { name, value, type, checked } = e.target;
-    
     if (name.startsWith('customMeal.')) {
       const field = name.split('.')[1];
       setFormData(prev => ({
         ...prev,
-        customMeal: {
-          ...prev.customMeal,
-          [field]: value
-        }
+        customMeal: { ...prev.customMeal, [field]: value }
       }));
     } else {
-      setFormData(prev => ({
-        ...prev,
-        [name]: type === 'checkbox' ? checked : value
-      }));
+      setFormData(prev => ({ ...prev, [name]: type === 'checkbox' ? checked : value }));
     }
   };
 
-  // Simplified prediction logic focused on blood sugar levels
   const getPrediction = (data) => {
     const fasting = parseFloat(data.fastingSugar);
     const postMeal = parseFloat(data.postMealSugar);
     
-    // Base risk assessment based on blood sugar only
     let riskScore = 0;
     if (fasting > 126 || postMeal > 200) riskScore = 0.8;
     else if (fasting > 100 || postMeal > 140) riskScore = 0.4;
     else riskScore = 0.1;
     
-    // Determine risk level
     let risk, message, color;
     if (riskScore > 0.6) {
       risk = 'high';
@@ -167,40 +119,35 @@ const MealLog = () => {
   };
 
   const generateRecommendations = (data, risk) => {
-    const recommendations = [];
-    
+    const recs = [];
     if (risk === 'high') {
-      recommendations.push('Check blood sugar more frequently today');
-      recommendations.push('Consider a light walk after meals');
-      recommendations.push('Stay well hydrated');
+      recs.push('Check blood sugar more frequently today','Consider a light walk after meals','Stay well hydrated');
     } else if (risk === 'medium') {
-      recommendations.push('Monitor portion sizes for next meal');
-      recommendations.push('Include fiber-rich foods');
-      recommendations.push('Consider adding more vegetables');
+      recs.push('Monitor portion sizes for next meal','Include fiber-rich foods','Consider adding more vegetables');
     } else {
-      recommendations.push('Continue with current meal patterns');
-      recommendations.push('Maintain regular physical activity');
+      recs.push('Continue with current meal patterns','Maintain regular physical activity');
     }
-    
-    return recommendations;
+    return recs;
   };
 
   const handleSubmit = async (e) => {
     e.preventDefault();
     setIsLoading(true);
 
-    // Simulate ML model prediction API call
     await new Promise(resolve => setTimeout(resolve, 2000));
     
     const predictionResult = getPrediction(formData);
     setPrediction(predictionResult);
-    
+
     console.log('Meal log data for ML pipeline:', {
       ...formData,
       timestamp: new Date().toISOString(),
       prediction: predictionResult
     });
-    
+
+    // Save log to Firebase
+    await saveLog(formData, predictionResult);
+
     setIsLoading(false);
   };
 
@@ -231,273 +178,93 @@ const MealLog = () => {
         <div className="bg-white/70 dark:bg-gray-800/70 backdrop-blur-sm rounded-2xl shadow-soft border border-neutral-100 dark:border-neutral-700 p-8 transition-all duration-300">
           <form onSubmit={handleSubmit} className="space-y-8">
             
-            {/* Blood Sugar Levels */}
+            {/* Blood Sugar Inputs */}
             <div className="space-y-6">
               <h2 className="text-xl font-semibold text-neutral-900 dark:text-white border-b border-neutral-200 dark:border-neutral-600 pb-2 flex items-center">
                 <BeakerIcon className="h-6 w-6 mr-2 text-primary-600 dark:text-primary-400" />
                 Blood Sugar Readings
               </h2>
-
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-6">
                 <div>
-                  <label htmlFor="fastingSugar" className="block text-sm font-medium text-neutral-700 dark:text-neutral-300 mb-2">
-                    Fasting Sugar Level (mg/dL)
-                  </label>
-                  <input
-                    type="number"
-                    id="fastingSugar"
-                    name="fastingSugar"
-                    value={formData.fastingSugar}
-                    onChange={handleInputChange}
-                    className="block w-full px-4 py-3 border border-gray-300 dark:border-gray-600 rounded-xl focus:ring-2 focus:ring-primary-500 focus:border-primary-500 dark:bg-gray-700 dark:text-white transition-colors duration-200"
-                    placeholder="e.g., 95"
-                    min="50"
-                    max="600"
-                    required
-                  />
-                  <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">Target: 80-130 mg/dL</p>
+                  <label htmlFor="fastingSugar" className="block text-sm font-medium">Fasting Sugar (mg/dL)</label>
+                  <input type="number" id="fastingSugar" name="fastingSugar"
+                    value={formData.fastingSugar} onChange={handleInputChange}
+                    className="block w-full px-4 py-3 border rounded-xl" required />
                 </div>
-
                 <div>
-                  <label htmlFor="postMealSugar" className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
-                    Post-Meal Sugar Level (mg/dL)
-                  </label>
-                  <input
-                    type="number"
-                    id="postMealSugar"
-                    name="postMealSugar"
-                    value={formData.postMealSugar}
-                    onChange={handleInputChange}
-                    className="block w-full px-4 py-3 border border-gray-300 dark:border-gray-600 rounded-xl focus:ring-2 focus:ring-primary-500 focus:border-primary-500 dark:bg-gray-700 dark:text-white transition-colors duration-200"
-                    placeholder="e.g., 140"
-                    min="50"
-                    max="600"
-                    required
-                  />
-                  <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">Target: Less than 180 mg/dL</p>
+                  <label htmlFor="postMealSugar" className="block text-sm font-medium">Post-Meal Sugar (mg/dL)</label>
+                  <input type="number" id="postMealSugar" name="postMealSugar"
+                    value={formData.postMealSugar} onChange={handleInputChange}
+                    className="block w-full px-4 py-3 border rounded-xl" required />
                 </div>
               </div>
             </div>
 
             {/* Meal Information */}
             <div className="space-y-6">
-              <h2 className="text-xl font-semibold text-gray-900 dark:text-white border-b border-gray-200 dark:border-gray-600 pb-2 flex items-center">
-                <CakeIcon className="h-6 w-6 mr-2 text-primary-600" />
-                Meal Information
+              <h2 className="text-xl font-semibold flex items-center">
+                <CakeIcon className="h-6 w-6 mr-2 text-primary-600" /> Meal Information
               </h2>
-
-              {/* Meal Selection */}
               <div>
-                <label htmlFor="mealTaken" className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
-                  Meal Taken
-                </label>
-                <select
-                  id="mealTaken"
-                  name="mealTaken"
-                  value={formData.mealTaken}
-                  onChange={handleMealChange}
-                  className="block w-full px-4 py-3 border border-gray-300 dark:border-gray-600 rounded-xl focus:ring-2 focus:ring-primary-500 focus:border-primary-500 dark:bg-gray-700 dark:text-white transition-colors duration-200"
-                  required
-                >
-                  <option value="">Select a meal from our database</option>
-                  {mealOptions.map((meal) => (
-                    <option key={meal} value={meal}>
-                      {meal}
-                    </option>
-                  ))}
+                <label htmlFor="mealTaken" className="block text-sm font-medium">Meal Taken</label>
+                <select id="mealTaken" name="mealTaken" value={formData.mealTaken}
+                  onChange={handleMealChange} className="block w-full px-4 py-3 border rounded-xl" required>
+                  <option value="">Select a meal</option>
+                  {mealOptions.map(meal => <option key={meal} value={meal}>{meal}</option>)}
                 </select>
               </div>
-
-              {/* Custom Meal Fields */}
               {showCustomMeal && (
                 <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 p-4 bg-gray-50 dark:bg-gray-700 rounded-xl">
-                  <div>
-                    <label htmlFor="customMeal.name" className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
-                      Custom Meal Name
-                    </label>
-                    <input
-                      type="text"
-                      name="customMeal.name"
-                      value={formData.customMeal.name}
-                      onChange={handleInputChange}
-                      className="block w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-primary-500 dark:bg-gray-800 dark:text-white"
-                      placeholder="e.g., Homemade Pasta"
-                      required={showCustomMeal}
-                    />
-                  </div>
-                  <div>
-                    <label htmlFor="customMeal.estimatedCarbs" className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
-                      Est. Carbs (g)
-                    </label>
-                    <input
-                      type="number"
-                      name="customMeal.estimatedCarbs"
-                      value={formData.customMeal.estimatedCarbs}
-                      onChange={handleInputChange}
-                      className="block w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-primary-500 dark:bg-gray-800 dark:text-white"
-                      placeholder="e.g., 45"
-                    />
-                  </div>
-                  <div>
-                    <label htmlFor="customMeal.estimatedCalories" className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
-                      Est. Calories
-                    </label>
-                    <input
-                      type="number"
-                      name="customMeal.estimatedCalories"
-                      value={formData.customMeal.estimatedCalories}
-                      onChange={handleInputChange}
-                      className="block w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-primary-500 dark:bg-gray-800 dark:text-white"
-                      placeholder="e.g., 350"
-                    />
-                  </div>
+                  <input type="text" name="customMeal.name" placeholder="Custom Meal Name"
+                    value={formData.customMeal.name} onChange={handleInputChange}
+                    className="border px-3 py-2 rounded-lg" required />
+                  <input type="number" name="customMeal.estimatedCarbs" placeholder="Carbs (g)"
+                    value={formData.customMeal.estimatedCarbs} onChange={handleInputChange}
+                    className="border px-3 py-2 rounded-lg" />
+                  <input type="number" name="customMeal.estimatedCalories" placeholder="Calories"
+                    value={formData.customMeal.estimatedCalories} onChange={handleInputChange}
+                    className="border px-3 py-2 rounded-lg" />
                 </div>
               )}
-
-              {/* Portion and Time */}
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-6">
-                <div>
-                  <label htmlFor="portionAmount" className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
-                    Portion Size
-                  </label>
-                  <div className="flex space-x-3">
-                    <div className="flex-1 relative">
-                      <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
-                        <ScaleIcon className="h-5 w-5 text-gray-400" />
-                      </div>
-                      <input
-                        type="number"
-                        id="portionAmount"
-                        name="portionAmount"
-                        value={formData.portionAmount}
-                        onChange={handleInputChange}
-                        className="block w-full pl-10 pr-3 py-3 border border-gray-300 dark:border-gray-600 rounded-xl focus:ring-2 focus:ring-primary-500 focus:border-primary-500 dark:bg-gray-700 dark:text-white transition-colors duration-200"
-                        placeholder="Amount"
-                        step="0.1"
-                        min="0.1"
-                        required
-                      />
-                    </div>
-                    <select
-                      name="portionUnit"
-                      value={formData.portionUnit}
-                      onChange={handleInputChange}
-                      className="px-4 py-3 border border-gray-300 dark:border-gray-600 rounded-xl focus:ring-2 focus:ring-primary-500 focus:border-primary-500 dark:bg-gray-700 dark:text-white transition-colors duration-200"
-                    >
-                      {portionUnits.map((unit) => (
-                        <option key={unit.value} value={unit.value}>
-                          {unit.label}
-                        </option>
-                      ))}
-                    </select>
-                  </div>
+                <div className="flex space-x-3">
+                  <input type="number" id="portionAmount" name="portionAmount"
+                    value={formData.portionAmount} onChange={handleInputChange}
+                    className="flex-1 border px-4 py-3 rounded-xl" placeholder="Amount" required />
+                  <select name="portionUnit" value={formData.portionUnit}
+                    onChange={handleInputChange} className="px-4 py-3 border rounded-xl">
+                    {portionUnits.map(unit => <option key={unit.value} value={unit.value}>{unit.label}</option>)}
+                  </select>
                 </div>
-
-                <div>
-                  <label htmlFor="timeOfDay" className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
-                    Time of Day
-                  </label>
-                  <div className="relative">
-                    <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
-                      <ClockIcon className="h-5 w-5 text-gray-400" />
-                    </div>
-                    <select
-                      id="timeOfDay"
-                      name="timeOfDay"
-                      value={formData.timeOfDay}
-                      onChange={handleInputChange}
-                      className="block w-full pl-10 pr-3 py-3 border border-gray-300 dark:border-gray-600 rounded-xl focus:ring-2 focus:ring-primary-500 focus:border-primary-500 dark:bg-gray-700 dark:text-white transition-colors duration-200"
-                      required
-                    >
-                      <option value="">Select time of day</option>
-                      {timeOptions.map((time) => (
-                        <option key={time} value={time}>
-                          {time}
-                        </option>
-                      ))}
-                    </select>
-                  </div>
-                </div>
+                <select id="timeOfDay" name="timeOfDay" value={formData.timeOfDay}
+                  onChange={handleInputChange} className="px-4 py-3 border rounded-xl" required>
+                  <option value="">Select time of day</option>
+                  {timeOptions.map(time => <option key={time} value={time}>{time}</option>)}
+                </select>
               </div>
             </div>
 
             {/* Notes */}
-            <div>
-              <label htmlFor="notes" className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
-                Additional Notes (Optional)
-              </label>
-              <textarea
-                id="notes"
-                name="notes"
-                value={formData.notes}
-                onChange={handleInputChange}
-                rows={3}
-                className="block w-full px-4 py-3 border border-gray-300 dark:border-gray-600 rounded-xl focus:ring-2 focus:ring-primary-500 focus:border-primary-500 dark:bg-gray-700 dark:text-white transition-colors duration-200"
-                placeholder="Any additional information about your meal, how you felt, or other relevant details..."
-              />
-            </div>
+            <textarea id="notes" name="notes" value={formData.notes} onChange={handleInputChange}
+              rows={3} className="w-full border px-4 py-3 rounded-xl" placeholder="Additional notes..." />
 
-            {/* Prediction Result */}
+            {/* Prediction */}
             {prediction && (
               <div className={`border rounded-xl p-6 ${prediction.color}`}>
-                <div className="flex items-start space-x-3">
-                  {prediction.risk === 'high' && <ExclamationTriangleIcon className="h-6 w-6 mt-1 flex-shrink-0" />}
-                  {prediction.risk === 'medium' && <ExclamationTriangleIcon className="h-6 w-6 mt-1 flex-shrink-0" />}
-                  {prediction.risk === 'low' && <CheckIcon className="h-6 w-6 mt-1 flex-shrink-0" />}
-                  <div className="flex-1">
-                    <h3 className="font-semibold mb-2 flex items-center">
-                      AI Health Assessment
-                      <span className="ml-2 text-xs px-2 py-1 bg-black/10 rounded-full">
-                        Risk Score: {Math.round(prediction.riskScore * 100)}%
-                      </span>
-                    </h3>
-                    <p className="text-sm mb-4">{prediction.message}</p>
-                    
-                    {prediction.recommendations && prediction.recommendations.length > 0 && (
-                      <div>
-                        <h4 className="font-medium mb-2">Recommendations:</h4>
-                        <ul className="text-sm space-y-1">
-                          {prediction.recommendations.map((rec, idx) => (
-                            <li key={idx} className="flex items-start space-x-2">
-                              <CheckIcon className="h-3 w-3 mt-1 flex-shrink-0" />
-                              <span>{rec}</span>
-                            </li>
-                          ))}
-                        </ul>
-                      </div>
-                    )}
-                  </div>
-                </div>
+                <h3 className="font-semibold mb-2">AI Health Assessment</h3>
+                <p className="text-sm mb-4">{prediction.message}</p>
+                <ul className="text-sm list-disc pl-5">
+                  {prediction.recommendations.map((rec, idx) => <li key={idx}>{rec}</li>)}
+                </ul>
               </div>
             )}
 
-            {/* Submit Button */}
-            <div className="pt-6">
-              <button
-                type="submit"
-                disabled={!isFormValid || isLoading}
-                className={`
-                  w-full flex items-center justify-center px-8 py-4 text-lg font-semibold rounded-xl 
-                  transition-all duration-200 transform
-                  ${isFormValid && !isLoading
-                    ? 'bg-primary-600 text-white hover:bg-primary-700 hover:-translate-y-1 shadow-medium hover:shadow-strong'
-                    : 'bg-gray-300 dark:bg-gray-600 text-gray-500 dark:text-gray-400 cursor-not-allowed'
-                  }
-                `}
-              >
-                {isLoading ? (
-                  <>
-                    <ArrowPathIcon className="h-6 w-6 mr-3 animate-spin" />
-                    Analyzing with AI...
-                  </>
-                ) : (
-                  <>
-                    <CloudIcon className="h-6 w-6 mr-3" />
-                    Submit to AI Analysis
-                  </>
-                )}
-              </button>
-            </div>
+            {/* Submit */}
+            <button type="submit" disabled={!isFormValid || isLoading}
+              className="w-full flex items-center justify-center px-8 py-4 text-lg font-semibold rounded-xl bg-primary-600 text-white">
+              {isLoading ? (<><ArrowPathIcon className="h-6 w-6 mr-3 animate-spin" /> Analyzing...</>)
+                        : (<><CloudIcon className="h-6 w-6 mr-3" /> Submit to AI Analysis</>)}
+            </button>
           </form>
         </div>
       </div>

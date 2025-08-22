@@ -14,26 +14,45 @@ import BloodSugarLineChart from '../components/LineChart';
 import MealRiskDonutChart from '../components/DonutChart';
 import MLDataService from '../services/mlData';
 
+import { collection, query, where, orderBy, getDocs } from "firebase/firestore";
+import { db, auth } from "../services/firebase";
+
 const Dashboard = () => {
   const [bloodSugarData, setBloodSugarData] = useState(null);
   const [riskData, setRiskData] = useState(null);
   const [insights, setInsights] = useState(null);
   const [loading, setLoading] = useState(true);
+  const [recentLogs, setRecentLogs] = useState([]);
 
-  // Load ML data on component mount
+  // Fetch logs from Firebase
+  const fetchLogs = async () => {
+    const user = auth.currentUser;
+    if (!user) return [];
+    const q = query(
+      collection(db, "logs"),
+      where("userId", "==", user.uid),
+      orderBy("createdAt", "desc")
+    );
+    const snap = await getDocs(q);
+    return snap.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+  };
+
+  // Load ML data + logs on component mount
   useEffect(() => {
     const loadDashboardData = async () => {
       try {
         setLoading(true);
-        const [trendsResult, riskResult, insightsResult] = await Promise.all([
+        const [trendsResult, riskResult, insightsResult, logs] = await Promise.all([
           MLDataService.getBloodSugarTrends('7days'),
           MLDataService.getMealRiskDistribution(),
-          MLDataService.getWeeklyInsights()
+          MLDataService.getWeeklyInsights(),
+          fetchLogs()
         ]);
         
         setBloodSugarData(trendsResult);
         setRiskData(riskResult);
         setInsights(insightsResult);
+        setRecentLogs(logs);
       } catch (error) {
         console.error('Error loading dashboard data:', error);
       } finally {
@@ -44,42 +63,11 @@ const Dashboard = () => {
     loadDashboardData();
   }, []);
 
-  // Dummy data for demonstration - will be replaced by ML data
-  const recentLogs = [
-    {
-      id: 1,
-      date: '2025-08-21',
-      time: 'Breakfast (8-10 AM)',
-      meal: 'Oats with Berries and Nuts',
-      fastingSugar: 95,
-      postMealSugar: 135,
-      riskLevel: 'low'
-    },
-    {
-      id: 2,
-      date: '2025-08-20',
-      time: 'Lunch (12-2 PM)',
-      meal: 'Basmati Rice with Dal',
-      fastingSugar: 110,
-      postMealSugar: 165,
-      riskLevel: 'medium'
-    },
-    {
-      id: 3,
-      date: '2025-08-20',
-      time: 'Dinner (6-8 PM)',
-      meal: 'Quinoa Salad with Vegetables',
-      fastingSugar: 98,
-      postMealSugar: 128,
-      riskLevel: 'low'
-    }
-  ];
-
   const stats = {
     averageFasting: bloodSugarData?.summary?.avgFasting || 101,
     averagePostMeal: bloodSugarData?.summary?.avgPostMeal || 143,
-    totalLogs: 15,
-    riskyMeals: riskData?.data?.find(item => item.name === 'High Risk')?.count || 3
+    totalLogs: recentLogs.length,
+    riskyMeals: riskData?.data?.find(item => item.name === 'High Risk')?.count || 0
   };
 
   return (
