@@ -1,24 +1,55 @@
-import MealCard from './components/MealCard';
+import React from 'react';
+import { BrowserRouter as Router, Routes, Route } from 'react-router-dom';
+import Navbar from './components/Navbar';
+import Footer from './components/Footer';
+import Home from './pages/Home';
+import Profile from './pages/Profile';
+import RegisterProfile from './pages/Login'; // Keep for login functionality
+import MealLog from './pages/MealLog';
+import Dashboard from './pages/Dashboard';
+import Feedback from './pages/Feedback';
+import NotFound from './pages/NotFound';
+import './tailwind.css';
 
-// Main React App entry point
 function App() {
-    return (
-        <div className="min-h-screen w-full flex flex-col bg-gradient-to-br from-indigo-100 via-white to-blue-100 px-4 py-8">
-            {/* Header */}
-            <div className="w-full max-w-5xl mx-auto mb-6">
-                <div className="flex justify-center items-center">
-                    <h1 className="text-4xl md:text-5xl font-bold tracking-tight bg-clip-text text-transparent bg-gradient-to-r from-indigo-600 via-blue-700 to-cyan-600 font-serif drop-shadow-sm">
-                        DiaLog · Smart Diabetes Meal Analyzer
-                    </h1>
-                </div>
-            </div>
-
-            {/* Main Content */}
-            <div className="w-full max-w-5xl mx-auto flex-1">
-                <MealCard />
-            </div>
-        </div>
-    );
+  return (
+    <Router>
+      <div className="flex flex-col min-h-screen">
+        {/* Navigation */}
+        <Navbar />
+        
+        {/* Main Content */}
+        <main className="flex-grow">
+          <Routes>
+            {/* Home Page */}
+            <Route path="/" element={<Home />} />
+            
+            {/* Profile Page */}
+            <Route path="/profile" element={<Profile />} />
+            
+            {/* Login/Registration Page */}
+            <Route path="/login" element={<RegisterProfile />} />
+            
+            {/* Meal Logging */}
+            <Route path="/meal-log" element={<MealLog />} />
+            
+            {/* Dashboard */}
+            <Route path="/dashboard" element={<Dashboard />} />
+            
+            {/* Feedback */}
+            <Route path="/feedback" element={<Feedback />} />
+            
+            {/* 404 Not Found */}
+            <Route path="*" element={<NotFound />} />
+          </Routes>
+        </main>
+        
+        {/* Footer */}
+        <Footer />
+      </div>
+    </Router>
+  );
 }
+
 
 export default App;

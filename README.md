@@ -1,145 +1,363 @@
-# DiaLog - Smart Diabetes Meal Analyzer 🍽️💊
+# Diabetes Meal Planner (DiaLog)
 
-A full-stack web application that helps diabetic patients analyze meal safety using machine learning predictions based on their health profile and food nutritional data.
+A comprehensive diabetes management application that helps users track their meals, monitor blood sugar levels, and get AI-powered insights for better diabetes care.
 
-## 🌟 Features
+## 🏗️ Project Structure
 
-- **Smart Meal Analysis**: ML-powered predictions for meal safety
-- **Personalized Recommendations**: Tailored advice based on user health profile  
-- **Nutritional Information**: Detailed breakdown of calories, carbs, protein, etc.
-- **Real-time Search**: Instant food search with 400+ food items
-- **BMI Calculation**: Automatic BMI calculation and health insights
-- **Risk Assessment**: Clear safety indicators with confidence scores
+```
+diabetes-meal-planner/
+│
+├── frontend/                                   # React + Tailwind frontend
+│   ├── public/                                 # Public static assets
+│   │   ├── favicon.ico
+│   │   ├── logo.png
+│   │   └── index.html
+│   │
+│   ├── src/
+│   │   ├── assets/                             # Images, icons, static resources
+│   │   │   ├── meals/                          # Meal-related images
+│   │   │   │   ├── idli.jpg
+│   │   │   │   ├── dosa.jpg
+│   │   │   │   └── poha.jpg
+│   │   │   ├── icons/                          # SVG/PNG icons
+│   │   │   │   ├── safe-icon.svg
+│   │   │   │   └── risky-icon.svg
+│   │   │   ├── charts/                         # Chart placeholder images
+│   │   │   └── styles/                         # Custom CSS
+│   │   │
+│   │   ├── components/                         # Reusable UI components
+│   │   │   ├── Navbar.jsx
+│   │   │   ├── Footer.jsx
+│   │   │   ├── MealCard.jsx
+│   │   │   ├── ChartCard.jsx
+│   │   │   ├── DonutChart.jsx
+│   │   │   ├── LineChart.jsx
+│   │   │   └── SafeMealSuggestions.jsx
+│   │   │
+│   │   ├── pages/                              # Page-level components
+│   │   │   ├── Home.jsx
+│   │   │   ├── Dashboard.jsx
+│   │   │   ├── MealLog.jsx
+│   │   │   ├── Profile.jsx
+│   │   │   ├── Login.jsx
+│   │   │   ├── Feedback.jsx
+│   │   │   └── NotFound.jsx
+│   │   │
+│   │   ├── services/                           # API & Firebase calls
+│   │   │   ├── api.js                          # FastAPI backend calls
+│   │   │   ├── firebase.js                     # Firebase setup
+│   │   │   ├── mlData.js                       # ML data service
+│   │   │   └── storage.js                      # Firebase Storage uploads
+│   │   │
+│   │   ├── App.jsx                             # Main app component
+│   │   ├── index.jsx                           # React entry point
+│   │   ├── tailwind.css                        # Tailwind main CSS
+│   │   └── config.js                           # Global constants
+│   │
+│   ├── package.json
+│   ├── tailwind.config.js
+│   └── README.md
+│
+├── backend/                                    # FastAPI + ML backend
+│   ├── data/
+│   │   └── pred_food.csv                       # Indian Food + Diabetes dataset
+│   │
+│   ├── models/
+│   │   ├── diabetes_model.joblib               # Trained ML model
+│   │   ├── feature_columns.joblib              # Feature columns
+│   │   └── scaler.joblib                       # Data scaler
+│   │
+│   ├── static/                                 # Static files served by FastAPI
+│   │   └── meal_images/                        # Meal images for API
+│   │       ├── idli.jpg
+│   │       └── dosa.jpg
+│   │
+│   ├── train_model.py                          # ML model training script
+│   ├── main.py                                 # FastAPI app entry point
+│   ├── firebase_admin_setup.py                 # Firebase admin configuration
+│   ├── seed_firestore.py                      # Database seeding script
+│   ├── requirements.txt                        # Python dependencies
+│   ├── .env                                    # Environment variables
+│   ├── venv/                                   # Python virtual environment
+│   └── README.md
+│
+├── docs/                                       # Project documentation
+│   ├── architecture-diagram.png
+│   ├── api-endpoints.md
+│   ├── ml-workflow.md
+│   └── ui-wireframes.png
+│
+└── README.md                                   # This file
+```
 
-## 🏗️ Architecture
+## 🚀 Features
 
-- **Frontend**: React.js with Tailwind CSS
-- **Backend**: FastAPI with Machine Learning model
-- **ML Model**: Random Forest Classifier
-- **Data**: Food Master Dataset with nutritional information
+- **Meal Logging**: Easy-to-use interface for logging meals with blood sugar tracking
+- **AI-Powered Insights**: Machine learning model provides personalized recommendations
+- **Interactive Charts**: Blood sugar trends and meal risk analysis visualization
+- **Risk Assessment**: Real-time meal risk evaluation based on diabetes management
+- **Responsive Design**: Modern UI with dark mode support
+- **User Profiles**: Comprehensive user management and health tracking
 
-## 📋 Prerequisites
+## 🛠️ Tech Stack
 
-- Python 3.8+ 
-- Node.js 16+
-- Git
+### Frontend
+- **React 18.3.1** - Modern React with hooks
+- **Tailwind CSS 3.4.17** - Utility-first CSS framework
+- **Recharts** - Interactive data visualization
+- **Heroicons** - Beautiful SVG icons
+- **React Router** - Client-side routing
 
-## 🚀 Quick Start
+### Backend
+- **FastAPI** - High-performance Python web framework
+- **Scikit-learn** - Machine learning model
+- **Pandas & NumPy** - Data processing
+- **Joblib** - Model serialization
+- **Firebase Admin SDK** - Database and authentication
 
-### 1. Clone & Setup
+### Database
+- **Firebase Firestore** - NoSQL document database
+- **Firebase Storage** - File storage for images
+
+## 🏃‍♂️ Quick Start
+
+### Prerequisites
+- Node.js 18+ and npm
+- Python 3.8+
+- Firebase project (optional, for full features)
+
+### Frontend Setup
+```bash
+cd frontend
+npm install
+npm start
+```
+The app will run on `http://localhost:3000`
+
+### Backend Setup
+```bash
+cd backend
+python -m venv venv
+source venv/bin/activate  # On Windows: venv\Scripts\activate
+pip install -r requirements.txt
+python main.py
+```
+The API will run on `http://localhost:8000`
+
+### ML Model Training
+```bash
+cd backend
+python train_model.py
+```
+
+## 📊 ML Model Details
+
+The application uses a machine learning model trained on Indian food and diabetes data to:
+- Predict blood sugar impact of meals
+- Assess meal risk levels (Low/Medium/High)
+- Provide personalized recommendations
+- Generate health insights and trends
+
+## 🎨 UI/UX Features
+
+- **Muted Green & Peach Color Scheme** - Calming, health-focused design
+- **Glassmorphism Effects** - Modern backdrop blur and transparency
+- **Dark Mode Support** - Automatic theme switching
+- **Responsive Design** - Mobile-first approach
+- **Interactive Charts** - Real-time data visualization
+- **Accessibility** - WCAG compliant design
+
+## 📱 Pages & Components
+
+### Pages
+- **Home** - Landing page with app overview
+- **Dashboard** - Main health analytics and insights
+- **Meal Log** - Blood sugar and meal tracking
+- **Profile** - User profile management
+- **Feedback** - User feedback and support
+
+### Key Components
+- **BloodSugarLineChart** - 7-day blood sugar trends
+- **MealRiskDonutChart** - Risk distribution visualization
+- **SafeMealSuggestions** - AI-powered meal recommendations
+- **MealCard** - Individual meal display component
+
+## 🔧 Configuration
+
+### Environment Variables
+Backend `.env` file:
+```env
+HOST=127.0.0.1
+PORT=8000
+DEBUG=True
+MODEL_PATH=./models/diabetes_model.joblib
+DATABASE_URL=sqlite:///./diabetes_app.db
+```
+
+### Tailwind Configuration
+Custom color scheme in `tailwind.config.js`:
+- Primary: Muted Green shades
+- Secondary: Peach tones
+- Success/Warning/Danger variants
+
+## 📈 Future Enhancements
+
+- Wearable device integration
+- Advanced meal planning
+- Medication tracking
+- Doctor portal
+- Family sharing features
+- Export health reports
+
+## 🤝 Contributing
+
+1. Fork the repository
+2. Create a feature branch
+3. Make your changes
+4. Submit a pull request
+
+## 📄 License
+
+This project is licensed under the MIT License.
+
+## 👥 Team
+
+- **Frontend Development** - React & Tailwind implementation
+- **Backend Development** - FastAPI & ML integration  
+- **ML Engineering** - Diabetes prediction model
+- **UI/UX Design** - Modern health-focused design
+
+---
+
+For detailed setup instructions and API documentation, see the individual README files in the `frontend/` and `backend/` directories.
+
+---
+
+## Quick Install Commands
+
+Run these commands from the root of the project to install all dependencies for both frontend and backend.
+
+### Frontend
+
+```bash
+cd frontend
+npm install
+npm install react react-dom react-router-dom tailwindcss chart.js firebase
+# (Optional) If using create-react-app, install it globally:
+# npm install -g create-react-app
+```
+The app will run on `http://localhost:3000`
+
+### Backend
+
+```bash
+cd backend
+python -m venv venv
+source venv/bin/activate  # On Windows: venv\Scripts\activate
+pip install fastapi uvicorn scikit-learn joblib pandas python-dotenv firebase-admin
+# Or, to install all dependencies from requirements.txt:
+pip install -r requirements.txt
+```
+
+---
+
+## Project Structure
+
+```
+DiaLog/
+│
+├── frontend/                  # React + Tailwind (handled by teammates)
+│   ├── src/
+│   │   ├── components/        # Reusable UI components
+│   │   │   ├── Navbar.jsx     # Navigation bar
+│   │   │   ├── Footer.jsx     # Footer
+│   │   │   ├── MealCard.jsx   # Displays a meal item with image & details
+│   │   │   └── ChartDisplay.jsx  # Displays sugar trends using Chart.js
+│   │   ├── pages/             # Main pages for the app
+│   │   │   ├── Home.jsx       # Landing page
+│   │   │   ├── Dashboard.jsx  # Shows sugar trends & safe/risky stats
+│   │   │   ├── MealLog.jsx    # User logs meals & sugar levels
+│   │   │   ├── Login.jsx      # Firebase login/signup
+│   │   │   └── NotFound.jsx   # 404 page
+│   │   ├── services/          # API calls to backend & Firebase
+│   │   │   ├── api.js         # Fetch requests to FastAPI (/predict, /recommend)
+│   │   │   └── firebase.js    # Firebase config & Firestore functions
+│   │   ├── App.jsx            # Main React app entry point
+│   │   └── index.jsx          # Renders React into HTML
+│   ├── public/                # Public assets
+│   │   └── logo.png           # App logo
+│   ├── package.json           # React dependencies
+│   ├── tailwind.config.js     # Tailwind setup
+│   └── README.md              # Frontend-specific README
+│
+├── backend/                   # FastAPI + ML Model (YOUR PART)
+│   ├── data/                  
+│   │   └── pred_food.csv      # Kaggle Indian Food + Diabetes dataset
+│   ├── models/
+│   │   └── diabetes_model.joblib  # Trained ML model
+│   ├── train_model.py         # Script to train model & save as .joblib
+│   ├── main.py                # FastAPI app with /predict, /recommend, /log endpoints
+│   ├── requirements.txt       # Python dependencies for backend
+│   ├── .env                   # API keys, Firebase credentials, etc. (gitignored)
+│   ├── venv/                  # (Optional) Virtual environment for Python
+│   └── README.md              # Backend-specific README
+│
+└── README.md                  # Main project readme (overview of frontend + backend)
+```
+
+---
+
+## Dependencies
+
+### Frontend
+
+- **React** (via `create-react-app`)
+- **Tailwind CSS**
+- **Chart.js** (for sugar trend visualization)
+- **Firebase** (authentication, Firestore)
+- **Other common React dependencies** (see `frontend/package.json`)
+
+### Backend
+
+- **Python 3.8+**
+- **FastAPI** (REST API)
+- **Uvicorn** (ASGI server)
+- **scikit-learn** (ML model)
+- **joblib** (model serialization)
+- **pandas** (data handling)
+- **python-dotenv** (environment variable management)
+- **firebase-admin** (for backend Firebase access)
+- **Other dependencies** (see `backend/requirements.txt`)
+
+---
+
+## Project Setup
+
+### 1. Clone the Repository
+
 ```bash
 git clone <repo-url>
 cd DiaLog
 ```
 
-### 2. Backend Setup (FastAPI + ML Model)
+---
+
+### 2. Frontend Setup
+
 ```bash
-cd backend
-
-# Create virtual environment
-python -m venv venv
-
-# Activate virtual environment
-# Windows:
-venv\Scripts\activate
-# Linux/Mac:
-source venv/bin/activate
-
-# Install dependencies
-pip install fastapi uvicorn pandas scikit-learn joblib numpy python-multipart
-
-# Train the ML model (creates synthetic user data)
-python train_model.py
-
-# Test model loading
-python test_model.py
-
-# Start API server
-uvicorn main:app --reload --host 0.0.0.0 --port 8000
-```
-
-### 3. Frontend Setup (React + Tailwind)
-```bash
-cd ../frontend
-
-# Install dependencies
+cd frontend
 npm install
-
-# Start development server
-npm run dev
+# To start the frontend (React app)
+npm start
 ```
 
-### 4. Access the Application
-- **Frontend**: http://localhost:3000
-- **Backend API**: http://localhost:8000
-- **API Documentation**: http://localhost:8000/docs
+- Configure Firebase in `frontend/src/services/firebase.js` using your Firebase project credentials.
+- Place your environment variables in `frontend/.env` (if needed).
 
-## 📊 API Endpoints
+---
 
-### Health Check
-```bash
-GET /health
-```
+### 3. Backend Setup
 
-### Get Available Foods
-```bash
-GET /foods?search=chicken
-```
-
-### Predict Meal Safety
-```bash
-POST /predict
-Content-Type: application/json
-
-{
-  "age": 35,
-  "gender": "Male",
-  "weight_kg": 75.0,
-  "height_cm": 175.0,
-  "fasting_sugar": 95.0,
-  "post_meal_sugar": 130.0,
-  "meal_taken": "Boiled rice (Uble chawal)",
-  "time_of_day": "Lunch",
-  "portion_size": 1.0,
-  "portion_unit": "bowl"
-}
-```
-
-## 🧪 Model Details
-
-- **Algorithm**: Random Forest Classifier
-- **Features**: Age, gender, BMI, blood sugar levels, food nutritional data
-- **Training Data**: 2000+ synthetic samples based on real food data
-- **Accuracy**: ~85-90% on test data
-- **Safety Criteria**: Carb content, glycemic index, portion size, user health profile
-
-## 📁 Project Structure
-
-```
-DiaLog/
-├── backend/
-│   ├── main.py              # FastAPI application
-│   ├── train_model.py       # ML model training
-│   ├── test_model.py        # Model testing utilities
-│   ├── data/
-│   │   └── Food_Master_Dataset_.csv
-│   ├── models/              # Trained model artifacts
-│   └── venv/               # Python virtual environment
-├── frontend/
-│   ├── src/
-│   │   ├── components/
-│   │   │   └── MealCard.jsx # Main UI component
-│   │   └── App.jsx
-│   ├── package.json
-│   └── public/
-└── README.md
-```
-
-## 🔧 Troubleshooting
-
-### Backend Issues
-
-1. **Import Error**: Ensure virtual environment is activated
 ```bash
 cd backend
 venv\Scripts\activate  # Windows
