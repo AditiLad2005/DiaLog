@@ -246,6 +246,7 @@ npm install react react-dom react-router-dom tailwindcss chart.js firebase
 # (Optional) If using create-react-app, install it globally:
 # npm install -g create-react-app
 ```
+The app will run on `http://localhost:3000`
 
 ### Backend
 
@@ -359,43 +360,62 @@ npm start
 
 ```bash
 cd backend
-python -m venv venv
-source venv/bin/activate  # On Windows: venv\Scripts\activate
-pip install -r requirements.txt
+venv\Scripts\activate  # Windows
+source venv/bin/activate  # Linux/Mac
 ```
 
-- Place your environment variables (API keys, Firebase credentials, etc.) in `backend/.env`.
-- Ensure `data/pred_food.csv` and `models/diabetes_model.joblib` exist (train the model if needed).
-
-#### To train the ML model:
-
+2. **Model Not Found**: Run the training script
 ```bash
 python train_model.py
 ```
 
-#### To run the FastAPI server:
+3. **Dataset Not Found**: Ensure `Food_Master_Dataset_.csv` is in `backend/data/`
 
-```bash
-uvicorn main:app --reload
-```
+### Frontend Issues
 
----
+1. **CORS Error**: Make sure backend is running on port 8000
+2. **API Connection**: Check if backend health endpoint responds: http://localhost:8000/health
 
-## Environment Variables
+## 🚧 Development
 
-- **frontend/.env**: For frontend-specific secrets (if any).
-- **backend/.env**: For backend secrets (API keys, Firebase credentials, etc.).
-- Both are gitignored.
+### Adding New Foods
+1. Add entries to `Food_Master_Dataset_.csv`
+2. Retrain the model: `python train_model.py`
+3. Restart the API server
 
----
+### Model Improvements
+- Adjust Random Forest parameters in `train_model.py`
+- Add new features to the feature engineering pipeline
+- Collect real user data for better training
 
-## Usage
+## 📈 Future Enhancements
 
-- Access the frontend at [http://localhost:3000](http://localhost:3000)
-- Backend API runs at [http://localhost:8000](http://localhost:8000)
+- [ ] User authentication and meal history
+- [ ] Mobile app development
+- [ ] Integration with fitness trackers
+- [ ] Doctor dashboard for patient monitoring
+- [ ] Multi-language support
+- [ ] Meal planning recommendations
 
----
+## 🤝 Contributing
 
-## More Info
+1. Fork the repository
+2. Create a feature branch
+3. Make your changes
+4. Add tests if applicable
+5. Submit a pull request
 
-- See `frontend/README.md` and `backend/README.md` for more details on each part.
+## 📄 License
+
+This project is licensed under the MIT License - see the LICENSE file for details.
+
+## 👥 Team
+
+DiaLog Team - Diabetes Management Solution
+
+## 🙏 Acknowledgments
+
+- Food nutritional data from comprehensive food database
+- Machine learning libraries: scikit-learn, pandas, numpy
+- Frontend framework: React.js with Tailwind CSS
+- Backend framework: FastAPI
