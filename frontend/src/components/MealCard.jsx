@@ -1,585 +1,239 @@
-import React, { useState, useEffect, useRef } from "react";
-import { predictDiabetesFriendly, fetchFoods } from "../services/api";
-import { FiUser, FiActivity, FiClock, FiTrendingUp, FiSearch, FiAlertTriangle, FiCheck, FiLoader, FiX } from "react-icons/fi";
+import React from 'react';
+import { 
+  ExclamationTriangleIcon, 
+  CheckCircleIcon,
+  ClockIcon,
+  ScaleIcon,
+  FireIcon,
+  BeakerIcon 
+} from '@heroicons/react/24/outline';
 
-const GENDERS = ["Male", "Female", "Other"];
-const MEAL_TIMES = ["Breakfast", "Lunch", "Dinner", "Snack"];
-const PORTION_UNITS = ["cup", "bowl", "spoon", "g", "serving"];
+const MealCard = ({ 
+  meal = {}, 
+  riskLevel = 'low', // 'low', 'medium', 'high'
+  onClick = () => {},
+  className = "",
+  showNutrition = true,
+  showPrediction = false
+}) => {
+  // Default meal data structure aligned with ML pipeline
+  const {
+    name = "Sample Meal",
+    image = "/api/placeholder/200/150",
+    // Nutrition from Dataset A (Food Master)
+    calories = 0,
+    carbs = 0,
+    protein = 0,
+    fat = 0,
+    fiber = 0,
+    glycemicIndex = 50,
+    glycemicLoad = 10,
+    portionSize = "1 cup",
+    timeOfDay = "Breakfast",
+    // ML prediction data
+    riskScore = 0.3,
+    confidence = 0.85,
+    // User log data
+    fastingSugar = null,
+    postMealSugar = null,
+    actualOutcome = null
+  } = meal;
 
-export default function MealCard() {
-  const [formData, setFormData] = useState({
-    age: "",
-    gender: "Male",
-    weight_kg: "",
-    height_cm: "",
-    fasting_sugar: "",
-    post_meal_sugar: "",
-    meal_taken: "",
-    portion_size: "1",
-    portion_unit: "serving",
-    time_of_day: "Lunch",
-  });
-
-  const [foods, setFoods] = useState([]);
-  const [searchTerm, setSearchTerm] = useState("");
-  const [loading, setLoading] = useState(false);
-  const [prediction, setPrediction] = useState(null);
-  const [error, setError] = useState(null);
-  const [loadingFoods, setLoadingFoods] = useState(true);
-  const [showDropdown, setShowDropdown] = useState(false);
-  const dropdownRef = useRef(null);
-
-  // Auto-calculate BMI
-  const bmi = formData.weight_kg && formData.height_cm 
-    ? (formData.weight_kg / ((formData.height_cm / 100) ** 2)).toFixed(1)
-    : null;
-
-  // Improve food fetching on component mount
-  useEffect(() => {
-    setLoadingFoods(true);
-    console.log("Fetching foods from backend...");
-    
-    fetchFoods()
-      .then(data => {
-        console.log(`Foods loaded: ${data.count} items`);
-        if (data && data.foods && data.foods.length > 0) {
-          // Sort foods alphabetically
-          const sortedFoods = [...data.foods].sort((a, b) => 
-            a.toLowerCase().localeCompare(b.toLowerCase())
-          );
-          setFoods(sortedFoods);
-          console.log(`Loaded ${sortedFoods.length} food items successfully`);
-        } else {
-          console.warn("No foods returned from API, using fallback list");
-          setFoods([
-            "Rice", "Dal", "Chicken", "Apple", "Chapati", 
-            "Paneer", "Eggs", "Fish", "Vegetables"
-          ]);
-        }
-        setLoadingFoods(false);
-      })
-      .catch(err => {
-        console.error("Failed to load foods:", err);
-        // Fallback foods
-        setFoods([
-          "Rice", "Dal", "Chicken", "Apple", "Chapati", 
-          "Paneer", "Eggs", "Fish", "Vegetables"
-        ]);
-        setError("Failed to load food database. Please check if the backend server is running.");
-        setLoadingFoods(false);
-      });
-  }, []);
-
-  // Close dropdown when clicking outside
-  useEffect(() => {
-    const handler = (e) => {
-      if (dropdownRef.current && !dropdownRef.current.contains(e.target)) {
-        setShowDropdown(false);
-      }
-    };
-    document.addEventListener("mousedown", handler);
-    return () => document.removeEventListener("mousedown", handler);
-  }, []);
-
-  // Filter foods based on search - improved search functionality
-  const filteredFoods = searchTerm 
-    ? foods.filter(food => 
-        food.toLowerCase().includes(searchTerm.toLowerCase())
-      )
-    : foods;
-
-  const handleSubmit = async (e) => {
-    e.preventDefault();
-    setLoading(true);
-    setError(null);
-    setPrediction(null);
-
-    // Validation
-    if (!formData.meal_taken) {
-      setError("Please select a meal from the dropdown.");
-      setLoading(false);
-      return;
-    }
-
-    try {
-      const result = await predictDiabetesFriendly({
-        age: parseInt(formData.age) || 25,
-        gender: formData.gender,
-        weight_kg: parseFloat(formData.weight_kg) || 70,
-        height_cm: parseFloat(formData.height_cm) || 170,
-        fasting_sugar: parseFloat(formData.fasting_sugar) || 100,
-        post_meal_sugar: parseFloat(formData.post_meal_sugar) || 140,
-        meal_taken: formData.meal_taken,
-        portion_size: parseFloat(formData.portion_size) || 1,
-        portion_unit: formData.portion_unit,
-        time_of_day: formData.time_of_day,
-      });
-
-      setPrediction(result);
-    } catch (err) {
-      console.error("Prediction error:", err);
-      setError(`Analysis failed: ${err?.response?.data?.detail || err?.message || "Please try again."}`);
-    } finally {
-      setLoading(false);
+  // Risk level styling
+  const getRiskStyling = (risk) => {
+    switch (risk) {
+      case 'high':
+        return {
+          border: 'border-danger-200 bg-danger-50 dark:border-danger-700 dark:bg-danger-900/20',
+          badge: 'bg-danger-500 text-white',
+          icon: ExclamationTriangleIcon,
+          label: 'High Risk'
+        };
+      case 'medium':
+        return {
+          border: 'border-warning-200 bg-warning-50 dark:border-warning-700 dark:bg-warning-900/20',
+          badge: 'bg-warning-500 text-white',
+          icon: ExclamationTriangleIcon,
+          label: 'Medium Risk'
+        };
+      default:
+        return {
+          border: 'border-success-200 bg-success-50 dark:border-success-700 dark:bg-success-900/20',
+          badge: 'bg-success-500 text-white',
+          icon: CheckCircleIcon,
+          label: 'Safe'
+        };
     }
   };
 
+  const riskStyling = getRiskStyling(riskLevel);
+  const RiskIcon = riskStyling.icon;
+
+  // Glycemic Index category
+  const getGICategory = (gi) => {
+    if (gi <= 55) return { label: 'Low', color: 'text-success-700 bg-success-100 dark:text-success-400 dark:bg-success-900/30' };
+    if (gi <= 69) return { label: 'Medium', color: 'text-warning-700 bg-warning-100 dark:text-warning-400 dark:bg-warning-900/30' };
+    return { label: 'High', color: 'text-danger-700 bg-danger-100 dark:text-danger-400 dark:bg-danger-900/30' };
+  };
+
+  const giCategory = getGICategory(glycemicIndex);
+
   return (
-    <div className="max-w-4xl mx-auto p-6 bg-white rounded-2xl shadow-lg">
-      <div className="text-center mb-8">
-        <h2 className="text-3xl font-bold text-blue-800 mb-2">
-          Diabetes Meal Safety Analyzer
-        </h2>
-        <p className="text-gray-600">
-          Get personalized meal safety predictions based on your health profile
-        </p>
-        {foods.length > 0 && (
-          <p className="text-sm text-blue-600 mt-2">
-            ✅ {foods.length} food items loaded from trained model
-          </p>
-        )}
+    <div 
+      className={`
+        relative bg-white dark:bg-gray-800 rounded-xl shadow-soft hover:shadow-medium 
+        transition-all duration-300 cursor-pointer overflow-hidden
+        border-2 ${riskStyling.border}
+        ${className}
+      `}
+      onClick={onClick}
+    >
+      {/* Risk indicator */}
+      <div className="absolute top-3 right-3 z-10">
+        <div className={`flex items-center space-x-1 ${riskStyling.badge} px-2 py-1 rounded-full text-xs font-medium`}>
+          <RiskIcon className="h-3 w-3" />
+          <span>{riskStyling.label}</span>
+        </div>
       </div>
 
-      <form onSubmit={handleSubmit} className="space-y-8">
-        {/* Personal Information Section */}
-        <div className="bg-blue-50 rounded-xl p-6">
-          <div className="flex items-center mb-4">
-            <FiUser className="text-blue-600 mr-2" size={20} />
-            <h3 className="text-lg font-semibold text-gray-800">Personal Information</h3>
+      {/* ML Confidence indicator (if prediction available) */}
+      {showPrediction && confidence && (
+        <div className="absolute top-3 left-3 z-10">
+          <div className="bg-black/70 text-white px-2 py-1 rounded-full text-xs font-medium">
+            {Math.round(confidence * 100)}% confident
           </div>
-          
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">
-                Age (years)
-              </label>
-              <input
-                type="number"
-                value={formData.age}
-                onChange={(e) => setFormData(prev => ({ ...prev, age: e.target.value }))}
-                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-                required
-                min="18"
-                max="100"
-                placeholder="25"
-              />
-            </div>
+        </div>
+      )}
 
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">
-                Gender
-              </label>
-              <select
-                value={formData.gender}
-                onChange={(e) => setFormData(prev => ({ ...prev, gender: e.target.value }))}
-                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-                required
-              >
-                {GENDERS.map(gender => (
-                  <option key={gender} value={gender}>{gender}</option>
-                ))}
-              </select>
-            </div>
-
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">
-                Weight (kg)
-              </label>
-              <input
-                type="number"
-                value={formData.weight_kg}
-                onChange={(e) => setFormData(prev => ({ ...prev, weight_kg: e.target.value }))}
-                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-                required
-                min="30"
-                max="200"
-                step="0.1"
-                placeholder="70.0"
-              />
-            </div>
+      {/* Meal image */}
+      <div className="relative h-48 overflow-hidden">
+        <img 
+          src={image} 
+          alt={name}
+          className="w-full h-full object-cover transition-transform duration-300 hover:scale-105"
+          onError={(e) => {
+            e.target.src = 'data:image/svg+xml;base64,PHN2ZyB3aWR0aD0iMjAwIiBoZWlnaHQ9IjE1MCIgeG1sbnM9Imh0dHA6Ly93d3cudzMub3JnLzIwMDAvc3ZnIj4KICA8cmVjdCB3aWR0aD0iMTAwJSIgaGVpZ2h0PSIxMDAlIiBmaWxsPSIjZjNmNGY2Ii8+CiAgPHRleHQgeD0iNTAlIiB5PSI1MCUiIGZvbnQtZmFtaWx5PSJBcmlhbCwgc2Fucy1zZXJpZiIgZm9udC1zaXplPSIxNCIgZmlsbD0iIzllYTNhOCIgdGV4dC1hbmNob3I9Im1pZGRsZSIgZHk9Ii4zZW0iPk1lYWwgSW1hZ2U8L3RleHQ+Cjwvc3ZnPgo=';
+          }}
+        />
+        
+        {/* Glycemic Load overlay */}
+        <div className="absolute bottom-2 left-2">
+          <div className="bg-black/70 text-white px-2 py-1 rounded text-xs font-medium">
+            GL: {glycemicLoad}
           </div>
+        </div>
+      </div>
 
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mt-4">
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">
-                Height (cm)
-              </label>
-              <input
-                type="number"
-                value={formData.height_cm}
-                onChange={(e) => setFormData(prev => ({ ...prev, height_cm: e.target.value }))}
-                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-                required
-                min="100"
-                max="250"
-                step="0.1"
-                placeholder="175.0"
-              />
-            </div>
+      {/* Meal details */}
+      <div className="p-4 space-y-3">
+        {/* Meal name */}
+        <h3 className="text-lg font-semibold text-gray-900 dark:text-white truncate">{name}</h3>
 
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">
-                BMI (Auto-calculated)
-              </label>
-              <input
-                type="text"
-                value={bmi ? `${bmi} ${bmi < 18.5 ? '(Underweight)' : bmi < 25 ? '(Normal)' : bmi < 30 ? '(Overweight)' : '(Obese)'}` : ''}
-                className="w-full px-3 py-2 border border-gray-200 rounded-lg bg-gray-50 text-gray-600"
-                readOnly
-                placeholder="BMI will appear here"
-              />
-            </div>
+        {/* Time and portion */}
+        <div className="flex items-center justify-between text-sm text-gray-600 dark:text-gray-300">
+          <div className="flex items-center space-x-1">
+            <ClockIcon className="h-4 w-4" />
+            <span>{timeOfDay}</span>
+          </div>
+          <div className="flex items-center space-x-1">
+            <ScaleIcon className="h-4 w-4" />
+            <span>{portionSize}</span>
           </div>
         </div>
 
-        {/* Blood Sugar Levels */}
-        <div className="bg-red-50 rounded-xl p-6">
-          <div className="flex items-center mb-4">
-            <FiTrendingUp className="text-red-600 mr-2" size={20} />
-            <h3 className="text-lg font-semibold text-gray-800">Blood Sugar Levels</h3>
-          </div>
-          
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">
-                Fasting Sugar (mg/dL)
-              </label>
-              <input
-                type="number"
-                value={formData.fasting_sugar}
-                onChange={(e) => setFormData(prev => ({ ...prev, fasting_sugar: e.target.value }))}
-                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-                required
-                min="50"
-                max="400"
-                step="0.1"
-                placeholder="100"
-              />
-              <p className="text-xs text-gray-500 mt-1">Normal: 70-100 mg/dL</p>
+        {/* Nutritional info (from Dataset A) */}
+        {showNutrition && (
+          <div className="grid grid-cols-2 gap-3 text-sm">
+            <div className="space-y-1">
+              <div className="flex justify-between">
+                <span className="text-gray-600 dark:text-gray-400">Calories:</span>
+                <span className="font-medium text-gray-900 dark:text-white">{calories}</span>
+              </div>
+              <div className="flex justify-between">
+                <span className="text-gray-600 dark:text-gray-400">Carbs:</span>
+                <span className="font-medium text-gray-900 dark:text-white">{carbs}g</span>
+              </div>
+              <div className="flex justify-between">
+                <span className="text-gray-600 dark:text-gray-400">Fiber:</span>
+                <span className="font-medium text-gray-900 dark:text-white">{fiber}g</span>
+              </div>
             </div>
-
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">
-                Post Meal Sugar (mg/dL)
-              </label>
-              <input
-                type="number"
-                value={formData.post_meal_sugar}
-                onChange={(e) => setFormData(prev => ({ ...prev, post_meal_sugar: e.target.value }))}
-                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-                required
-                min="70"
-                max="500"
-                step="0.1"
-                placeholder="140"
-              />
-              <p className="text-xs text-gray-500 mt-1">Normal: &lt;140 mg/dL (2hrs after meal)</p>
+            <div className="space-y-1">
+              <div className="flex justify-between">
+                <span className="text-gray-600 dark:text-gray-400">Protein:</span>
+                <span className="font-medium text-gray-900 dark:text-white">{protein}g</span>
+              </div>
+              <div className="flex justify-between">
+                <span className="text-gray-600 dark:text-gray-400">Fat:</span>
+                <span className="font-medium text-gray-900 dark:text-white">{fat}g</span>
+              </div>
+              <div className="flex justify-between">
+                <span className="text-gray-600 dark:text-gray-400">GI:</span>
+                <span className="font-medium text-gray-900 dark:text-white">{glycemicIndex}</span>
+              </div>
             </div>
           </div>
-        </div>
+        )}
 
-        {/* Meal Information Section with improved dropdown */}
-        <div className="bg-green-50 rounded-xl p-6">
-          <div className="flex items-center mb-4">
-            <FiActivity className="text-green-600 mr-2" size={20} />
-            <h3 className="text-lg font-semibold text-gray-800">Meal Information</h3>
-            <span className="ml-2 text-sm text-green-600">
-              ({foods.length} foods available)
+        {/* Glycemic index category */}
+        <div className="pt-2 border-t border-gray-200 dark:border-gray-600">
+          <div className="flex items-center justify-between">
+            <span className="text-sm text-gray-600 dark:text-gray-400">Glycemic Impact:</span>
+            <span className={`text-xs font-medium px-2 py-1 rounded-full ${giCategory.color}`}>
+              {giCategory.label} GI
             </span>
           </div>
-          
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-            <div ref={dropdownRef}>
-              <label className="block text-sm font-medium text-gray-700 mb-1">
-                Search & Select Meal
-              </label>
-              <div className="relative">
-                <input
-                  type="text"
-                  value={searchTerm}
-                  onChange={(e) => setSearchTerm(e.target.value)}
-                  onFocus={() => setShowDropdown(true)}
-                  placeholder="Type to search foods..."
-                  className="w-full px-3 py-2 border border-gray-300 rounded-lg mb-2 focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-                />
-                <FiSearch className="absolute right-3 top-3 text-gray-400" />
-              </div>
-              
-              {/* Optimized food dropdown */}
-              <div className="relative">
-                <select
-                  value={formData.meal_taken}
-                  onChange={(e) => {
-                    const selectedMeal = e.target.value;
-                    setFormData(prev => ({ ...prev, meal_taken: selectedMeal }));
-                    if (selectedMeal) {
-                      setSearchTerm(selectedMeal);
-                    }
-                  }}
-                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-                  required
-                  size={1}
-                >
-                  <option value="">-- Select a meal ({filteredFoods.length} items) --</option>
-                  {loadingFoods ? (
-                    <option disabled value="">Loading meals...</option>
-                  ) : filteredFoods.length > 0 ? (
-                    filteredFoods.map(food => (
-                      <option key={food} value={food}>{food}</option>
-                    ))
-                  ) : (
-                    <option disabled value="">No meals found. Try a different search.</option>
-                  )}
-                </select>
-              </div>
-              
-              {searchTerm && filteredFoods.length > 0 && (
-                <p className="mt-1 text-sm text-gray-500">
-                  Showing {Math.min(filteredFoods.length, 50)} of {filteredFoods.length} matching foods
-                </p>
-              )}
-              
-              {/* Simple reload button if foods failed to load */}
-              {foods.length === 0 && !loadingFoods && (
-                <button 
-                  type="button"
-                  onClick={() => {
-                    setLoadingFoods(true);
-                    fetchFoods()
-                      .then(data => {
-                        if (data?.foods?.length > 0) {
-                          setFoods(data.foods);
-                        } else {
-                          setError("No foods found in database.");
-                        }
-                        setLoadingFoods(false);
-                      })
-                      .catch(() => {
-                        setError("Failed to reload food database.");
-                        setLoadingFoods(false);
-                      });
-                  }}
-                  className="mt-2 text-blue-500 underline text-sm"
-                >
-                  Reload meal list
-                </button>
-              )}
-            </div>
-
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">
-                Time of Day
-              </label>
-              <select
-                value={formData.time_of_day}
-                onChange={(e) => setFormData(prev => ({ ...prev, time_of_day: e.target.value }))}
-                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-                required
-              >
-                {MEAL_TIMES.map(time => (
-                  <option key={time} value={time}>{time}</option>
-                ))}
-              </select>
-            </div>
-          </div>
-
-          <div className="grid grid-cols-2 gap-4 mt-4">
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">
-                Portion Size
-              </label>
-              <input
-                type="number"
-                value={formData.portion_size}
-                onChange={(e) => setFormData(prev => ({ ...prev, portion_size: e.target.value }))}
-                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-                required
-                min="0.1"
-                step="0.1"
-                placeholder="1"
-              />
-            </div>
-
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">
-                Unit
-              </label>
-              <select
-                value={formData.portion_unit}
-                onChange={(e) => setFormData(prev => ({ ...prev, portion_unit: e.target.value }))}
-                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-                required
-              >
-                {PORTION_UNITS.map(unit => (
-                  <option key={unit} value={unit}>{unit}</option>
-                ))}
-              </select>
-            </div>
-          </div>
         </div>
 
-        {/* Submit Button */}
-        <button
-          type="submit"
-          disabled={loading}
-          className="w-full bg-gradient-to-r from-blue-600 to-indigo-600 text-white py-4 px-6 rounded-xl font-semibold text-lg hover:from-blue-700 hover:to-indigo-700 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2 disabled:opacity-50 disabled:cursor-not-allowed transition-all duration-200"
-        >
-          {loading ? (
-            <div className="flex items-center justify-center">
-              <div className="animate-spin mr-3 h-5 w-5 border-2 border-white border-t-transparent rounded-full"></div>
-              Analyzing Your Meal Safety...
+        {/* Blood sugar data (if available from user logs) */}
+        {(fastingSugar || postMealSugar) && (
+          <div className="pt-2 border-t border-gray-200 dark:border-gray-600">
+            <div className="flex items-center space-x-1 mb-2">
+              <BeakerIcon className="h-4 w-4 text-gray-500" />
+              <span className="text-sm font-medium text-gray-700 dark:text-gray-300">Blood Sugar</span>
             </div>
-          ) : (
-            <>
-              <FiClock className="inline mr-2" />
-              Analyze Meal Safety
-            </>
-          )}
-        </button>
-      </form>
-
-      {/* Error Display - Enhanced with more details */}
-      {error && (
-        <div className="mt-6 p-4 bg-red-50 border border-red-200 rounded-lg text-red-700">
-          <div className="flex items-start">
-            <FiAlertTriangle className="mr-2 text-red-500 mt-1 flex-shrink-0" />
-            <div>
-              <span className="font-medium">Error:</span>
-              <span className="ml-2">{error}</span>
-              
-              {error.includes("not found in database") && (
-                <div className="mt-2 text-sm">
-                  <p>Please select a food from the dropdown list. The selected food must match exactly with our database.</p>
-                  <button
-                    onClick={() => setError(null)}
-                    className="mt-2 text-red-600 underline"
-                  >
-                    Dismiss
-                  </button>
+            <div className="grid grid-cols-2 gap-2 text-xs">
+              {fastingSugar && (
+                <div className="text-center p-2 bg-gray-100 dark:bg-gray-700 rounded">
+                  <div className="text-gray-600 dark:text-gray-400">Fasting</div>
+                  <div className="font-bold text-gray-900 dark:text-white">{fastingSugar}</div>
                 </div>
               )}
-              
-              {error.includes("backend server") && (
-                <div className="mt-2 text-sm">
-                  <p>Make sure the backend server is running at http://localhost:8000</p>
-                  <code className="block mt-1 p-2 bg-red-100 text-red-800 rounded">
-                    cd backend<br/>
-                    uvicorn main:app --reload
-                  </code>
+              {postMealSugar && (
+                <div className="text-center p-2 bg-gray-100 dark:bg-gray-700 rounded">
+                  <div className="text-gray-600 dark:text-gray-400">Post-Meal</div>
+                  <div className="font-bold text-gray-900 dark:text-white">{postMealSugar}</div>
                 </div>
               )}
             </div>
           </div>
-        </div>
-      )}
+        )}
 
-      {/* Results Display */}
-      {prediction && (
-        <div className="mt-8 space-y-6">
-          {/* Main Result */}
-          <div className={`p-6 rounded-xl border-2 ${
-            prediction.is_safe 
-              ? 'bg-green-50 border-green-200' 
-              : 'bg-yellow-50 border-yellow-200'
-          }`}>
-            <div className="flex items-center justify-between mb-4">
-              <h3 className="text-xl font-bold text-gray-800">
-                Safety Analysis Result
-              </h3>
-              <div className={`px-4 py-2 rounded-full font-semibold ${
-                prediction.is_safe 
-                  ? 'bg-green-100 text-green-800' 
-                  : 'bg-yellow-100 text-yellow-800'
-              }`}>
-                {prediction.is_safe ? '✅ Safe' : '⚠️ Caution'}
+        {/* ML Risk Score (if prediction mode) */}
+        {showPrediction && riskScore !== undefined && (
+          <div className="pt-2 border-t border-gray-200 dark:border-gray-600">
+            <div className="flex items-center justify-between">
+              <span className="text-sm text-gray-600 dark:text-gray-400">Risk Score:</span>
+              <div className="flex items-center space-x-2">
+                <div className="w-16 h-2 bg-gray-200 dark:bg-gray-600 rounded-full overflow-hidden">
+                  <div 
+                    className={`h-full transition-all duration-300 ${
+                      riskScore > 0.7 ? 'bg-danger-500' : 
+                      riskScore > 0.4 ? 'bg-warning-500' : 'bg-success-500'
+                    }`}
+                    style={{ width: `${riskScore * 100}%` }}
+                  />
+                </div>
+                <span className="text-xs font-medium text-gray-900 dark:text-white">
+                  {Math.round(riskScore * 100)}%
+                </span>
               </div>
             </div>
-            
-            <div className="grid md:grid-cols-3 gap-4 mb-4">
-              <div className="text-center p-3 bg-white rounded-lg">
-                <p className="text-sm text-gray-500">Confidence</p>
-                <p className="text-lg font-bold text-blue-600">
-                  {(prediction.confidence * 100).toFixed(1)}%
-                </p>
-              </div>
-              <div className="text-center p-3 bg-white rounded-lg">
-                <p className="text-sm text-gray-500">Risk Level</p>
-                <p className="text-lg font-bold text-blue-600">
-                  {prediction.risk_level}
-                </p>
-              </div>
-              <div className="text-center p-3 bg-white rounded-lg">
-                <p className="text-sm text-gray-500">Your BMI</p>
-                <p className="text-lg font-bold text-blue-600">
-                  {prediction.bmi}
-                </p>
-              </div>
-            </div>
-            
-            <p className="text-gray-700">{prediction.message}</p>
           </div>
-
-          {/* Nutritional Information */}
-          {prediction.nutritional_info && (
-            <div className="bg-blue-50 p-6 rounded-xl">
-              <h4 className="text-lg font-semibold text-gray-800 mb-4">
-                Nutritional Information (Your Portion)
-              </h4>
-              <div className="grid grid-cols-2 md:grid-cols-5 gap-4">
-                <div className="text-center p-3 bg-white rounded-lg">
-                  <p className="text-sm text-gray-500">Calories</p>
-                  <p className="text-lg font-bold text-blue-600">
-                    {Math.round(prediction.nutritional_info.calories)}
-                  </p>
-                </div>
-                <div className="text-center p-3 bg-white rounded-lg">
-                  <p className="text-sm text-gray-500">Carbs</p>
-                  <p className="text-lg font-bold text-blue-600">
-                    {Math.round(prediction.nutritional_info.carbs_g)}g
-                  </p>
-                </div>
-                <div className="text-center p-3 bg-white rounded-lg">
-                  <p className="text-sm text-gray-500">Protein</p>
-                  <p className="text-lg font-bold text-blue-600">
-                    {Math.round(prediction.nutritional_info.protein_g)}g
-                  </p>
-                </div>
-                <div className="text-center p-3 bg-white rounded-lg">
-                  <p className="text-sm text-gray-500">Fat</p>
-                  <p className="text-lg font-bold text-blue-600">
-                    {Math.round(prediction.nutritional_info.fat_g)}g
-                  </p>
-                </div>
-                <div className="text-center p-3 bg-white rounded-lg">
-                  <p className="text-sm text-gray-500">Fiber</p>
-                  <p className="text-lg font-bold text-blue-600">
-                    {Math.round(prediction.nutritional_info.fiber_g)}g
-                  </p>
-                </div>
-              </div>
-            </div>
-          )}
-
-          {/* Recommendations */}
-          {prediction.recommendations && prediction.recommendations.length > 0 && (
-            <div className="bg-gray-50 p-6 rounded-xl">
-              <h4 className="text-lg font-semibold text-gray-800 mb-4">
-                Recommendations
-              </h4>
-              <div className="space-y-3">
-                {prediction.recommendations.map((rec, index) => (
-                  <div key={index} className="flex items-start p-3 bg-white rounded-lg border-l-4 border-blue-500">
-                    <div className="flex-1">
-                      <p className="font-medium text-gray-800">{rec.name}</p>
-                      <p className="text-sm text-gray-600">{rec.reason}</p>
-                    </div>
-                  </div>
-                ))}
-              </div>
-            </div>
-          )}
-        </div>
-      )}
+        )}
+      </div>
     </div>
   );
-}
+};
+
+export default MealCard;

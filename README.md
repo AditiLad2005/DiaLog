@@ -28,37 +28,23 @@ A full-stack web application that helps diabetic patients analyze meal safety us
 
 ### 1. Clone & Setup
 ```bash
-git clone <repo-url>
-cd DiaLog
+cd frontend
+npm install
+npm start
 ```
+The app will run on `http://localhost:3000`
 
-### 2. Backend Setup (FastAPI + ML Model)
+### Backend Setup
 ```bash
 cd backend
-
-# Create virtual environment
 python -m venv venv
-
-# Activate virtual environment
-# Windows:
-venv\Scripts\activate
-# Linux/Mac:
-source venv/bin/activate
-
-# Install dependencies
-pip install fastapi uvicorn pandas scikit-learn joblib numpy python-multipart
-
-# Train the ML model (creates synthetic user data)
-python train_model.py
-
-# Test model loading
-python test_model.py
-
-# Start API server
-uvicorn main:app --reload --host 0.0.0.0 --port 8000
+source venv/bin/activate  # On Windows: venv\Scripts\activate
+pip install -r requirements.txt
+python main.py
 ```
+The API will run on `http://localhost:8000`
 
-### 3. Frontend Setup (React + Tailwind)
+### ML Model Training
 ```bash
 cd ../frontend
 
@@ -83,10 +69,16 @@ GET /health
 
 ### Get Available Foods
 ```bash
-GET /foods?search=chicken
+cd frontend
+npm install
+npm install react react-dom react-router-dom tailwindcss chart.js firebase
+# (Optional) If using create-react-app, install it globally:
+# npm install -g create-react-app
 ```
+The app will run on `http://localhost:3000`
 
-### Predict Meal Safety
+### Backend
+
 ```bash
 POST /predict
 Content-Type: application/json
@@ -117,15 +109,8 @@ Content-Type: application/json
 
 ```
 DiaLog/
-├── backend/
-│   ├── main.py              # FastAPI application
-│   ├── train_model.py       # ML model training
-│   ├── test_model.py        # Model testing utilities
-│   ├── data/
-│   │   └── Food_Master_Dataset_.csv
-│   ├── models/              # Trained model artifacts
-│   └── venv/               # Python virtual environment
-├── frontend/
+│
+├── frontend/                  # React + Tailwind (handled by teammates)
 │   ├── src/
 │   │   ├── components/
 │   │   │   └── MealCard.jsx # Main UI component
