@@ -1,8 +1,8 @@
-# DiaLog - Smart Diabetes Meal Analyzer 🍽️💊
+# DiaLog - Smart Diabetes Meal Analyzer
 
 A full-stack web application that helps diabetic patients analyze meal safety using machine learning predictions based on their health profile and food nutritional data.
 
-## 🌟 Features
+## Features
 
 - **Smart Meal Analysis**: ML-powered predictions for meal safety
 - **Personalized Recommendations**: Tailored advice based on user health profile  
@@ -11,20 +11,20 @@ A full-stack web application that helps diabetic patients analyze meal safety us
 - **BMI Calculation**: Automatic BMI calculation and health insights
 - **Risk Assessment**: Clear safety indicators with confidence scores
 
-## 🏗️ Architecture
+## Architecture
 
 - **Frontend**: React.js with Tailwind CSS
 - **Backend**: FastAPI with Machine Learning model
 - **ML Model**: Random Forest Classifier
 - **Data**: Food Master Dataset with nutritional information
 
-## 📋 Prerequisites
+## Prerequisites
 
 - Python 3.8+ 
 - Node.js 16+
 - Git
 
-## 🚀 Quick Start
+## Quick Start
 
 ### 1. Clone & Setup
 ```bash
@@ -74,7 +74,7 @@ npm run dev
 - **Backend API**: http://localhost:8000
 - **API Documentation**: http://localhost:8000/docs
 
-## 📊 API Endpoints
+## API Endpoints
 
 ### Health Check
 ```bash
@@ -105,7 +105,7 @@ Content-Type: application/json
 }
 ```
 
-## 🧪 Model Details
+## Model Details
 
 - **Algorithm**: Random Forest Classifier
 - **Features**: Age, gender, BMI, blood sugar levels, food nutritional data
@@ -113,7 +113,7 @@ Content-Type: application/json
 - **Accuracy**: ~85-90% on test data
 - **Safety Criteria**: Carb content, glycemic index, portion size, user health profile
 
-## 📁 Project Structure
+## Project Structure
 
 ```
 DiaLog/
@@ -135,7 +135,7 @@ DiaLog/
 └── README.md
 ```
 
-## 🔧 Troubleshooting
+## Troubleshooting
 
 ### Backend Issues
 
@@ -158,7 +158,7 @@ python train_model.py
 1. **CORS Error**: Make sure backend is running on port 8000
 2. **API Connection**: Check if backend health endpoint responds: http://localhost:8000/health
 
-## 🚧 Development
+## Development
 
 ### Adding New Foods
 1. Add entries to `Food_Master_Dataset_.csv`
@@ -170,7 +170,7 @@ python train_model.py
 - Add new features to the feature engineering pipeline
 - Collect real user data for better training
 
-## 📈 Future Enhancements
+## Future Enhancements
 
 - [ ] User authentication and meal history
 - [ ] Mobile app development
@@ -179,7 +179,7 @@ python train_model.py
 - [ ] Multi-language support
 - [ ] Meal planning recommendations
 
-## 🤝 Contributing
+## Contributing
 
 1. Fork the repository
 2. Create a feature branch
@@ -187,15 +187,15 @@ python train_model.py
 4. Add tests if applicable
 5. Submit a pull request
 
-## 📄 License
+## License
 
 This project is licensed under the MIT License - see the LICENSE file for details.
 
-## 👥 Team
+## Team
 
 DiaLog Team - Diabetes Management Solution
 
-## 🙏 Acknowledgments
+## Acknowledgments
 
 - Food nutritional data from comprehensive food database
 - Machine learning libraries: scikit-learn, pandas, numpy
