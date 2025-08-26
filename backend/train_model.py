@@ -67,26 +67,33 @@ def load_and_prepare_data():
         # Generate target labels based on multiple criteria
         targets = []
         for i in range(n_samples):
-            # Safety criteria
-            high_carbs = selected_foods.iloc[i]['carbs_g'] > 30
-            high_gi = selected_foods.iloc[i]['glycemic_index'] > 70
-            high_sugar = post_meal_sugars[i] > 180
-            large_portion = portion_sizes[i] > 1.5
+            # More realistic safety criteria
+            high_carbs = selected_foods.iloc[i]['carbs_g'] > 60  # Increased from 30 to 60
+            very_high_gi = selected_foods.iloc[i]['glycemic_index'] > 85  # Increased from 70 to 85
+            very_high_sugar = post_meal_sugars[i] > 220  # Increased from 180 to 220
+            very_large_portion = portion_sizes[i] > 2.5  # Increased from 1.5 to 2.5
             avoid_diabetic = selected_foods.iloc[i]['avoid_for_diabetic'] == 'Yes'
-            
-            # Calculate risk score
-            risk_factors = sum([high_carbs, high_gi, high_sugar, large_portion, avoid_diabetic])
-            
-            # Determine safety (0 = unsafe, 1 = safe)
-            if risk_factors >= 3:
+
+            # Calculate risk score with more realistic thresholds
+            severe_risk_factors = sum([very_high_gi, very_high_sugar, very_large_portion, avoid_diabetic])
+            moderate_risk_factors = sum([high_carbs])
+
+            # More balanced safety determination (0 = unsafe, 1 = safe)
+            if severe_risk_factors >= 2 or (severe_risk_factors >= 1 and moderate_risk_factors >= 1):
                 targets.append(0)  # Unsafe
-            elif risk_factors <= 1:
+            elif severe_risk_factors == 0 and moderate_risk_factors == 0:
                 targets.append(1)  # Safe
             else:
-                # Medium risk - random assignment with bias towards unsafe
-                targets.append(np.random.choice([0, 1], p=[0.7, 0.3]))
-        
+                # Medium risk - more balanced distribution
+                targets.append(np.random.choice([0, 1], p=[0.4, 0.6]))  # 40% unsafe, 60% safe
+
         targets = np.array(targets)
+
+        # Log sample distribution for debugging
+        safe_count = np.sum(targets)
+        unsafe_count = len(targets) - safe_count
+        print(f"Safe meals: {safe_count} ({safe_count/len(targets)*100:.1f}%)")
+        print(f"Unsafe meals: {unsafe_count} ({unsafe_count/len(targets)*100:.1f}%)")
         
         # Create feature names
         feature_names = [

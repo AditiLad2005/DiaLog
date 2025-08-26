@@ -4,7 +4,7 @@ import {
   CheckCircleIcon,
   ClockIcon,
   ScaleIcon,
-  FireIcon,
+  // ...existing code...
   BeakerIcon 
 } from '@heroicons/react/24/outline';
 
@@ -36,7 +36,7 @@ const MealCard = ({
     // User log data
     fastingSugar = null,
     postMealSugar = null,
-    actualOutcome = null
+  // ...existing code...
   } = meal;
 
   // Risk level styling
@@ -88,46 +88,20 @@ const MealCard = ({
       `}
       onClick={onClick}
     >
-      {/* Risk indicator */}
-      <div className="absolute top-3 right-3 z-10">
-        <div className={`flex items-center space-x-1 ${riskStyling.badge} px-2 py-1 rounded-full text-xs font-medium`}>
-          <RiskIcon className="h-3 w-3" />
-          <span>{riskStyling.label}</span>
-        </div>
-      </div>
-
-      {/* ML Confidence indicator (if prediction available) */}
-      {showPrediction && confidence && (
-        <div className="absolute top-3 left-3 z-10">
-          <div className="bg-black/70 text-white px-2 py-1 rounded-full text-xs font-medium">
-            {Math.round(confidence * 100)}% confident
+      {/* Risk indicator - only show for medium and high risk */}
+      {riskLevel !== 'low' && (
+        <div className="absolute top-3 right-3 z-10">
+          <div className={`flex items-center space-x-1 ${riskStyling.badge} px-2 py-1 rounded-full text-xs font-medium`}>
+            <RiskIcon className="h-3 w-3" />
+            <span>{riskStyling.label}</span>
           </div>
         </div>
       )}
 
-      {/* Meal image */}
-      <div className="relative h-48 overflow-hidden">
-        <img 
-          src={image} 
-          alt={name}
-          className="w-full h-full object-cover transition-transform duration-300 hover:scale-105"
-          onError={(e) => {
-            e.target.src = 'data:image/svg+xml;base64,PHN2ZyB3aWR0aD0iMjAwIiBoZWlnaHQ9IjE1MCIgeG1sbnM9Imh0dHA6Ly93d3cudzMub3JnLzIwMDAvc3ZnIj4KICA8cmVjdCB3aWR0aD0iMTAwJSIgaGVpZ2h0PSIxMDAlIiBmaWxsPSIjZjNmNGY2Ii8+CiAgPHRleHQgeD0iNTAlIiB5PSI1MCUiIGZvbnQtZmFtaWx5PSJBcmlhbCwgc2Fucy1zZXJpZiIgZm9udC1zaXplPSIxNCIgZmlsbD0iIzllYTNhOCIgdGV4dC1hbmNob3I9Im1pZGRsZSIgZHk9Ii4zZW0iPk1lYWwgSW1hZ2U8L3RleHQ+Cjwvc3ZnPgo=';
-          }}
-        />
-        
-        {/* Glycemic Load overlay */}
-        <div className="absolute bottom-2 left-2">
-          <div className="bg-black/70 text-white px-2 py-1 rounded text-xs font-medium">
-            GL: {glycemicLoad}
-          </div>
-        </div>
-      </div>
-
       {/* Meal details */}
       <div className="p-4 space-y-3">
         {/* Meal name */}
-        <h3 className="text-lg font-semibold text-gray-900 dark:text-white truncate">{name}</h3>
+        <h3 className="text-lg font-semibold text-gray-900 dark:text-white leading-tight break-words">{name}</h3>
 
         {/* Time and portion */}
         <div className="flex items-center justify-between text-sm text-gray-600 dark:text-gray-300">
@@ -168,8 +142,8 @@ const MealCard = ({
                 <span className="font-medium text-gray-900 dark:text-white">{fat}g</span>
               </div>
               <div className="flex justify-between">
-                <span className="text-gray-600 dark:text-gray-400">GI:</span>
-                <span className="font-medium text-gray-900 dark:text-white">{glycemicIndex}</span>
+                <span className="text-gray-600 dark:text-gray-400">GL:</span>
+                <span className="font-medium text-gray-900 dark:text-white">{glycemicLoad}</span>
               </div>
             </div>
           </div>
@@ -178,7 +152,7 @@ const MealCard = ({
         {/* Glycemic index category */}
         <div className="pt-2 border-t border-gray-200 dark:border-gray-600">
           <div className="flex items-center justify-between">
-            <span className="text-sm text-gray-600 dark:text-gray-400">Glycemic Impact:</span>
+            <span className="text-sm text-gray-600 dark:text-gray-400">Glycemic Index: {glycemicIndex}</span>
             <span className={`text-xs font-medium px-2 py-1 rounded-full ${giCategory.color}`}>
               {giCategory.label} GI
             </span>

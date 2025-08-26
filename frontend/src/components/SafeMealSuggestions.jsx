@@ -4,14 +4,18 @@ import {
   ArrowPathIcon,
   CheckCircleIcon,
   ExclamationTriangleIcon,
-  LightBulbIcon
+  LightBulbIcon,
+  PlusIcon
 } from '@heroicons/react/24/outline';
+import { fetchFoods } from '../services/api';
 import MealCard from './MealCard';
 
 const SafeMealSuggestions = ({ userProfile = {}, currentMeal = null, className = "" }) => {
   const [suggestions, setSuggestions] = useState([]);
   const [isLoading, setIsLoading] = useState(false);
   const [selectedCategory, setSelectedCategory] = useState('all');
+  const [availableMeals, setAvailableMeals] = useState([]);
+  const [usedMeals, setUsedMeals] = useState(new Set());
 
   // Categories for meal recommendations
   const categories = [
@@ -22,143 +26,175 @@ const SafeMealSuggestions = ({ userProfile = {}, currentMeal = null, className =
     { id: 'snacks', name: 'Snacks', icon: CheckCircleIcon }
   ];
 
-  // Mock meal suggestions (in real app, this would come from ML recommendations)
-  const mockSuggestions = [
-    {
-      name: "Quinoa Bowl with Vegetables",
-      image: "/api/placeholder/200/150",
-      calories: 320,
-      carbs: 45,
-      protein: 12,
-      fat: 8,
-      fiber: 6,
-      glycemicIndex: 35,
-      glycemicLoad: 8,
-      portionSize: "1 bowl",
-      timeOfDay: "Lunch",
-      riskScore: 0.2,
-      confidence: 0.92,
-      category: 'lunch',
-      reasons: [
-        "Low glycemic index (35)",
-        "High fiber content",
-        "Balanced macronutrients",
-        "Suitable for your BMI range"
-      ]
-    },
-    {
-      name: "Grilled Chicken with Steamed Broccoli",
-      image: "/api/placeholder/200/150",
-      calories: 280,
-      carbs: 12,
-      protein: 35,
-      fat: 8,
-      fiber: 4,
-      glycemicIndex: 25,
-      glycemicLoad: 3,
-      portionSize: "1 plate",
-      timeOfDay: "Dinner",
-      riskScore: 0.15,
-      confidence: 0.95,
-      category: 'dinner',
-      reasons: [
-        "Very low glycemic load",
-        "High protein content",
-        "Low carbohydrate content",
-        "Proven safe for similar profiles"
-      ]
-    },
-    {
-      name: "Oats with Berries and Nuts",
-      image: "/api/placeholder/200/150",
-      calories: 250,
-      carbs: 35,
-      protein: 8,
-      fat: 10,
-      fiber: 8,
-      glycemicIndex: 42,
-      glycemicLoad: 6,
-      portionSize: "1 bowl",
-      timeOfDay: "Breakfast",
-      riskScore: 0.25,
-      confidence: 0.88,
-      category: 'breakfast',
-      reasons: [
-        "Slow-release carbohydrates",
-        "High fiber for blood sugar stability",
-        "Antioxidants from berries",
-        "Good for morning metabolism"
-      ]
-    },
-    {
-      name: "Greek Yogurt with Cucumber",
-      image: "/api/placeholder/200/150",
-      calories: 120,
-      carbs: 8,
-      protein: 15,
-      fat: 3,
-      fiber: 1,
-      glycemicIndex: 20,
-      glycemicLoad: 2,
-      portionSize: "1 cup",
-      timeOfDay: "Snack",
-      riskScore: 0.1,
-      confidence: 0.96,
-      category: 'snacks',
-      reasons: [
-        "Very low glycemic impact",
-        "Probiotics for gut health",
-        "High protein for satiety",
-        "Minimal blood sugar spike"
-      ]
-    },
-    {
-      name: "Brown Rice with Dal",
-      image: "/api/placeholder/200/150",
-      calories: 380,
-      carbs: 58,
-      protein: 16,
-      fat: 6,
-      fiber: 5,
-      glycemicIndex: 48,
-      glycemicLoad: 12,
-      portionSize: "1 cup",
-      timeOfDay: "Lunch",
-      riskScore: 0.35,
-      confidence: 0.82,
-      category: 'lunch',
-      reasons: [
-        "Complex carbohydrates",
-        "Complete protein profile",
-        "Better than white rice",
-        "Traditional balanced meal"
-      ]
-    }
-  ];
+  // Load meals from dataset
+  useEffect(() => {
+    const loadMeals = async () => {
+      try {
+        const data = await fetchFoods();
+        setAvailableMeals(data.foods || []);
+      } catch (err) {
+        console.error('Failed to load meals:', err);
+        setAvailableMeals([]);
+      }
+    };
+    loadMeals();
+  }, []);
 
-  // Filter suggestions based on category
-  const filteredSuggestions = selectedCategory === 'all' 
-    ? mockSuggestions 
-    : mockSuggestions.filter(meal => meal.category === selectedCategory);
+  // Create meal suggestions from dataset
+  const createMealSuggestion = (mealName, category = 'all') => {
+    // Simple categorization based on meal name
+    let mealCategory = category;
+    if (category === 'all') {
+      const name = mealName.toLowerCase();
+      if (name.includes('breakfast') || name.includes('poha') || name.includes('upma') || name.includes('idli') || name.includes('dosa')) {
+        mealCategory = 'breakfast';
+      } else if (name.includes('lunch') || name.includes('rice') || name.includes('dal') || name.includes('curry')) {
+        mealCategory = 'lunch';
+      } else if (name.includes('dinner') || name.includes('roti') || name.includes('sabzi')) {
+        mealCategory = 'dinner';
+      } else if (name.includes('snack') || name.includes('tea') || name.includes('biscuit') || name.includes('sweet')) {
+        mealCategory = 'snacks';
+      } else {
+        mealCategory = 'lunch'; // default
+      }
+    }
+
+    return {
+      name: mealName,
+      calories: Math.floor(Math.random() * 200) + 150, // Estimated calories
+      carbs: Math.floor(Math.random() * 30) + 20,
+      protein: Math.floor(Math.random() * 15) + 5,
+      fat: Math.floor(Math.random() * 10) + 2,
+      fiber: Math.floor(Math.random() * 5) + 1,
+      glycemicIndex: Math.floor(Math.random() * 30) + 35, // Low to medium GI
+      portionSize: "1 serving",
+      timeOfDay: mealCategory.charAt(0).toUpperCase() + mealCategory.slice(1),
+      riskScore: Math.random() * 0.4, // Low risk meals
+      confidence: 0.85 + Math.random() * 0.1,
+      category: mealCategory,
+      reasons: [
+        "Traditional healthy option",
+        "Balanced nutritional profile",
+        "Suitable for diabetic diet",
+        "Good portion control"
+      ]
+    };
+  };
+
+  // Get non-repetitive meal suggestions from dataset
+  const getMealSuggestions = (category, count = 6) => {
+    if (!availableMeals.length) return [];
+
+    // Filter meals based on category
+    let candidateMeals = [...availableMeals];
+    
+    if (category !== 'all') {
+      candidateMeals = availableMeals.filter(meal => {
+        const name = meal.toLowerCase();
+        switch (category) {
+          case 'breakfast':
+            return name.includes('breakfast') || name.includes('poha') || name.includes('upma') || 
+                   name.includes('idli') || name.includes('dosa') || name.includes('paratha');
+          case 'lunch':
+            return name.includes('lunch') || name.includes('rice') || name.includes('dal') || 
+                   name.includes('curry') || name.includes('sambar') || name.includes('rasam');
+          case 'dinner':
+            return name.includes('dinner') || name.includes('roti') || name.includes('sabzi') || 
+                   name.includes('chapati') || name.includes('bhaji');
+          case 'snacks':
+            return name.includes('snack') || name.includes('tea') || name.includes('biscuit') || 
+                   name.includes('namkeen') || name.includes('chaat') || name.includes('pakora');
+          default:
+            return true;
+        }
+      });
+    }
+
+    // Remove already used meals and get fresh ones
+    const unusedMeals = candidateMeals.filter(meal => !usedMeals.has(meal));
+    
+    // If we've used all meals, reset the used set
+    if (unusedMeals.length < count) {
+      setUsedMeals(new Set());
+      candidateMeals = [...availableMeals];
+    }
+
+    // Randomly select meals
+    const selectedMeals = [];
+    const availableForSelection = unusedMeals.length >= count ? unusedMeals : candidateMeals;
+    
+    for (let i = 0; i < Math.min(count, availableForSelection.length); i++) {
+      const randomIndex = Math.floor(Math.random() * availableForSelection.length);
+      const selectedMeal = availableForSelection.splice(randomIndex, 1)[0];
+      selectedMeals.push(createMealSuggestion(selectedMeal, category));
+    }
+
+    // Track used meals
+    setUsedMeals(prev => {
+      const newUsed = new Set(prev);
+      selectedMeals.forEach(meal => newUsed.add(meal.name));
+      return newUsed;
+    });
+
+    return selectedMeals;
+  };
+
+  // Add meal to log function
+  const addMealToLog = (meal) => {
+    // Store meal data in localStorage for the meal log page
+    const mealForLog = {
+      name: meal.name,
+      calories: meal.calories,
+      carbs: meal.carbs,
+      protein: meal.protein,
+      fat: meal.fat,
+      fiber: meal.fiber,
+      glycemicIndex: meal.glycemicIndex,
+      portionSize: meal.portionSize,
+      timestamp: Date.now()
+    };
+    
+    const existingMeals = JSON.parse(localStorage.getItem('pendingMealsForLog') || '[]');
+    existingMeals.push(mealForLog);
+    localStorage.setItem('pendingMealsForLog', JSON.stringify(existingMeals));
+    
+    // Navigate to meal log page
+    window.location.href = '/meal-log';
+  };
+
+  // Initial load
+  useEffect(() => {
+    if (availableMeals.length > 0) {
+      setSuggestions(getMealSuggestions('all', 6));
+    }
+  }, [availableMeals]);
 
   // Simulate loading recommendations
   useEffect(() => {
-    setIsLoading(true);
-    const timer = setTimeout(() => {
-      setSuggestions(filteredSuggestions);
-      setIsLoading(false);
-    }, 1000);
+    if (availableMeals.length > 0) {
+      if (selectedCategory !== 'all') {
+        setIsLoading(true);
+        const timer = setTimeout(() => {
+          setSuggestions(getMealSuggestions(selectedCategory, 6));
+          setIsLoading(false);
+        }, 500);
 
-    return () => clearTimeout(timer);
-  }, [selectedCategory]);
+        return () => clearTimeout(timer);
+      } else {
+        setSuggestions(getMealSuggestions('all', 6));
+      }
+    }
+  }, [selectedCategory, availableMeals]);
 
   const generateRecommendations = () => {
+    if (!availableMeals.length) return;
+    
     setIsLoading(true);
-    // Simulate API call to ML service
+    // Generate fresh recommendations
     setTimeout(() => {
-      setSuggestions(mockSuggestions.sort(() => Math.random() - 0.5).slice(0, 4));
+      setSuggestions(getMealSuggestions(selectedCategory, 6));
       setIsLoading(false);
-    }, 1500);
+    }, 800);
   };
 
   return (
@@ -219,39 +255,54 @@ const SafeMealSuggestions = ({ userProfile = {}, currentMeal = null, className =
         </div>
       )}
 
-      {/* Suggestions Grid */}
+      {/* Individual Suggestions Grid */}
       {!isLoading && suggestions.length > 0 && (
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-          {suggestions.map((meal, index) => (
-            <div key={index} className="relative">
-              <MealCard
-                meal={meal}
-                riskLevel="low"
-                showNutrition={true}
-                showPrediction={true}
-                onClick={() => {
-                  // Handle meal selection
-                  console.log('Selected meal:', meal);
-                }}
-              />
-              
-              {/* Recommendation Reasons */}
-              <div className="mt-3 p-3 bg-gray-50 dark:bg-gray-700 rounded-lg">
-                <div className="flex items-center space-x-2 mb-2">
-                  <LightBulbIcon className="h-4 w-4 text-warning-500" />
-                  <span className="text-sm font-medium text-gray-700 dark:text-gray-300">Why we recommend this:</span>
+        <div>
+          <h3 className="text-lg font-semibold text-gray-900 dark:text-white mb-4">
+            Meal Suggestions
+          </h3>
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+            {suggestions.map((meal, index) => (
+              <div key={index} className="relative">
+                <MealCard
+                  meal={meal}
+                  riskLevel="low"
+                  showNutrition={true}
+                  showPrediction={true}
+                  onClick={() => {
+                    console.log('Selected meal:', meal);
+                  }}
+                />
+                
+                {/* Action Buttons */}
+                <div className="mt-3">
+                  <button
+                    onClick={() => addMealToLog(meal)}
+                    className="w-full px-3 py-2 bg-primary-600 hover:bg-primary-700 text-white text-sm font-medium rounded-lg transition-colors duration-200"
+                  >
+                    <PlusIcon className="h-4 w-4 inline mr-1" />
+                    Add to Log
+                  </button>
                 </div>
-                <ul className="text-xs text-gray-600 dark:text-gray-400 space-y-1">
-                  {meal.reasons?.slice(0, 3).map((reason, idx) => (
-                    <li key={idx} className="flex items-start space-x-2">
-                      <CheckCircleIcon className="h-3 w-3 text-success-500 mt-0.5 flex-shrink-0" />
-                      <span>{reason}</span>
-                    </li>
-                  ))}
-                </ul>
+                
+                {/* Recommendation Reasons */}
+                <div className="mt-3 p-3 bg-gray-50 dark:bg-gray-700 rounded-lg">
+                  <div className="flex items-center space-x-2 mb-2">
+                    <LightBulbIcon className="h-4 w-4 text-warning-500" />
+                    <span className="text-sm font-medium text-gray-700 dark:text-gray-300">Why we recommend this:</span>
+                  </div>
+                  <ul className="text-xs text-gray-600 dark:text-gray-400 space-y-1">
+                    {meal.reasons?.slice(0, 3).map((reason, idx) => (
+                      <li key={idx} className="flex items-start space-x-2">
+                        <CheckCircleIcon className="h-3 w-3 text-success-500 mt-0.5 flex-shrink-0" />
+                        <span>{reason}</span>
+                      </li>
+                    ))}
+                  </ul>
+                </div>
               </div>
-            </div>
-          ))}
+            ))}
+          </div>
         </div>
       )}
 

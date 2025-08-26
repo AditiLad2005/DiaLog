@@ -1,4 +1,6 @@
 import React, { useState, useEffect } from 'react';
+import { auth } from '../services/firebase';
+import { useNavigate } from 'react-router-dom';
 import { Link, useLocation } from 'react-router-dom';
 import { 
   Bars3Icon, 
@@ -23,12 +25,23 @@ const Navbar = () => {
   });
   const location = useLocation();
 
-  const navigation = [
-    { name: 'Home', href: '/' },
-    { name: 'Dashboard', href: '/dashboard' },
-    { name: 'Log Meal', href: '/meal-log' },
-    { name: 'Profile', href: '/profile' },
-  ];
+  const [user, setUser] = useState(null);
+  const navigate = useNavigate();
+
+  useEffect(() => {
+    const unsubscribe = auth.onAuthStateChanged(setUser);
+    return () => unsubscribe();
+  }, []);
+
+  const navigation = user
+    ? [
+        { name: 'Dashboard', href: '/dashboard' },
+        { name: 'Log Meal', href: '/meal-log' },
+        { name: 'Profile', href: '/profile' }
+      ]
+    : [
+        { name: 'Home', href: '/' }
+      ];
 
   // Apply dark mode to document
   useEffect(() => {
@@ -83,7 +96,18 @@ const Navbar = () => {
                 )}
               </Link>
             ))}
-            
+            {/* Log Out button after authentication, before theme toggle */}
+            {user && (
+              <button
+                onClick={async () => {
+                  await auth.signOut();
+                  navigate('/');
+                }}
+                className="relative px-4 py-2 rounded-xl text-sm font-medium bg-danger-50 text-danger-700 dark:bg-danger-900/30 dark:text-danger-300 hover:bg-danger-100 dark:hover:bg-danger-900/40 transition-all duration-300 mr-2"
+              >
+                Log Out
+              </button>
+            )}
             {/* Enhanced Theme toggle */}
             <button
               onClick={toggleTheme}
@@ -150,6 +174,18 @@ const Navbar = () => {
                 {item.name}
               </Link>
             ))}
+            {user && (
+              <button
+                onClick={async () => {
+                  await auth.signOut();
+                  navigate('/');
+                  setIsOpen(false);
+                }}
+                className="block w-full px-4 py-3 rounded-xl text-base font-medium bg-danger-50 text-danger-700 dark:bg-danger-900/30 dark:text-danger-300 hover:bg-danger-100 dark:hover:bg-danger-900/40 transition-all duration-300"
+              >
+                Log Out
+              </button>
+            )}
           </div>
         </div>
       </div>

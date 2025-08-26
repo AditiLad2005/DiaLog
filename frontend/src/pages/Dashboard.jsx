@@ -12,9 +12,8 @@ import {
 import SafeMealSuggestions from '../components/SafeMealSuggestions';
 import BloodSugarLineChart from '../components/LineChart';
 import MealRiskDonutChart from '../components/DonutChart';
-import MLDataService from '../services/mlData';
 
-import { collection, query, where, orderBy, getDocs } from "firebase/firestore";
+import { collection, query, orderBy, getDocs } from "firebase/firestore";
 import { db, auth } from "../services/firebase";
 
 const Dashboard = () => {
@@ -23,16 +22,14 @@ const Dashboard = () => {
   const [insights, setInsights] = useState(null);
   const [loading, setLoading] = useState(true);
   const [recentLogs, setRecentLogs] = useState([]);
+  const [error, setError] = useState(null);
 
   // Fetch logs from Firebase
   const fetchLogs = async () => {
     const user = auth.currentUser;
     if (!user) return [];
-    const q = query(
-      collection(db, "logs"),
-      where("userId", "==", user.uid),
-      orderBy("createdAt", "desc")
-    );
+    const userLogsCollection = collection(db, `users/${user.uid}/logs`);
+    const q = query(userLogsCollection, orderBy("createdAt", "desc"));
     const snap = await getDocs(q);
     return snap.docs.map(doc => ({ id: doc.id, ...doc.data() }));
   };
@@ -42,37 +39,149 @@ const Dashboard = () => {
     const loadDashboardData = async () => {
       try {
         setLoading(true);
-        const [trendsResult, riskResult, insightsResult, logs] = await Promise.all([
-          MLDataService.getBloodSugarTrends('7days'),
-          MLDataService.getMealRiskDistribution(),
-          MLDataService.getWeeklyInsights(),
-          fetchLogs()
-        ]);
-        
-        setBloodSugarData(trendsResult);
-        setRiskData(riskResult);
-        setInsights(insightsResult);
+        setError(null);
+        // Fetch logs from Firestore
+        let logs = [];
+        try {
+          logs = await fetchLogs();
+        } catch (err) {
+          setError('Error fetching logs from Firestore.');
+          logs = [];
+        }
         setRecentLogs(logs);
-      } catch (error) {
-        console.error('Error loading dashboard data:', error);
+
+        // Aggregate stats from logs
+        let fastingSum = 0, postMealSum = 0, riskyMeals = 0;
+        logs.forEach(log => {
+          const fasting = parseFloat(log.sugar_level_fasting);
+          const postMeal = parseFloat(log.sugar_level_post);
+          fastingSum += isNaN(fasting) ? 0 : fasting;
+          postMealSum += isNaN(postMeal) ? 0 : postMeal;
+          // Risky meal detection - check multiple sources
+          const logRisk = log.riskLevel || log.prediction?.risk_level || log.prediction?.risk || '';
+          if ((postMeal > 180) || (logRisk.toLowerCase() === 'high')) riskyMeals++;
+        });
+        const avgFasting = logs.length ? (fastingSum / logs.length) : 0;
+        const avgPostMeal = logs.length ? (postMealSum / logs.length) : 0;
+
+        setBloodSugarData({
+          data: logs.slice(0, 7).map(log => ({
+            date: log.createdAt?.toDate?.() ? log.createdAt.toDate().toLocaleDateString() : '',
+            time: Array.isArray(log.meals_taken) && log.meals_taken.length > 0 ? log.meals_taken[0].time_of_day : (log.time_of_day || ''),
+            fasting: parseFloat(log.sugar_level_fasting || log.fastingSugar || 0),
+            postMeal: parseFloat(log.sugar_level_post || log.postMealSugar || 0),
+            prediction: log.prediction?.risk || log.riskLevel || 'unknown',
+          })),
+          summary: {
+            avgFasting,
+            avgPostMeal,
+            improvement: '',
+            riskTrend: '',
+          }
+        });
+
+        // Helper to get risk from log - check all possible sources
+        const getRisk = l => {
+          if (l.riskLevel && l.riskLevel.trim()) return l.riskLevel.toLowerCase();
+          if (l.prediction?.risk_level) return l.prediction.risk_level.toLowerCase();
+          if (l.prediction?.risk) return l.prediction.risk.toLowerCase();
+          if (l.prediction?.recommendations && l.prediction.recommendations[0]?.risk_level) return l.prediction.recommendations[0].risk_level.toLowerCase();
+          // Fallback: check sugar levels
+          const postMeal = parseFloat(l.sugar_level_post || l.postMealSugar || 0);
+          if (postMeal > 180) return 'high';
+          return 'unknown';
+        };
+        
+        // Create meal-based data for donut chart
+        const mealDataArray = logs.slice(0, 8).map((log, index) => {
+          const mealName = Array.isArray(log.meals_taken) && log.meals_taken.length > 0 
+            ? log.meals_taken[0].meal 
+            : (log.meal || `Meal ${index + 1}`);
+          const risk = getRisk(log);
+          const postMeal = parseFloat(log.sugar_level_post || log.postMealSugar || 0);
+          return {
+            name: mealName,
+            value: 1, // Each meal is 1 unit
+            risk: risk,
+            postMeal: postMeal,
+            color: risk === 'high' ? '#ef4444' : risk === 'medium' ? '#f59e0b' : '#10b981'
+          };
+        });
+
+        console.log('Meal Data Array:', mealDataArray); // Debug log
+        
+        // Risk summary data (for fallback)
+        const riskDataArray = [
+          { name: 'Low Risk', value: logs.filter(l => getRisk(l) === 'low').length, count: logs.filter(l => getRisk(l) === 'low').length, color: '#10b981' },
+          { name: 'Medium Risk', value: logs.filter(l => getRisk(l) === 'medium').length, count: logs.filter(l => getRisk(l) === 'medium').length, color: '#f59e0b' },
+          { name: 'High Risk', value: logs.filter(l => getRisk(l) === 'high').length, count: logs.filter(l => getRisk(l) === 'high').length, color: '#ef4444' }
+        ];
+        
+        setRiskData({
+          data: riskDataArray,
+          mealData: mealDataArray, // Add meal-specific data
+          totalMeals: logs.length,
+          riskScore: logs.length ? (riskyMeals / logs.length) : 0,
+          insights: [],
+        });
+
+        // ML Insights (placeholder, could be enhanced)
+        setInsights({
+          insights: [
+            {
+              type: 'pattern',
+              title: 'Evening Meals Impact',
+              description: 'Your blood sugar tends to be higher after dinner meals.',
+              confidence: 0.89,
+              suggestion: 'Consider smaller portions or earlier dinner times.'
+            },
+            {
+              type: 'improvement',
+              title: 'Weekend Progress',
+              description: 'Your weekend meal management has improved.',
+              confidence: 0.76,
+              suggestion: 'Keep up the great work with portion control!'
+            },
+            {
+              type: 'alert',
+              title: 'Carbohydrate Sensitivity',
+              description: 'Rice-based meals show higher post-meal spikes.',
+              confidence: 0.82,
+              suggestion: 'Try pairing rice with more protein and fiber.'
+            }
+          ],
+          overallScore: logs.length ? (10 - (riskyMeals * 10 / logs.length)) : 10,
+          weeklyTrend: '',
+          nextModelUpdate: '',
+        });
+      } catch (err) {
+        setError('Error loading dashboard data. Please try again.');
+        console.error('Error loading dashboard data:', err);
       } finally {
         setLoading(false);
       }
     };
-
     loadDashboardData();
   }, []);
 
   const stats = {
-    averageFasting: bloodSugarData?.summary?.avgFasting || 101,
-    averagePostMeal: bloodSugarData?.summary?.avgPostMeal || 143,
+    averageFasting: bloodSugarData?.summary?.avgFasting?.toFixed(1) || 0,
+    averagePostMeal: bloodSugarData?.summary?.avgPostMeal?.toFixed(1) || 0,
     totalLogs: recentLogs.length,
     riskyMeals: riskData?.data?.find(item => item.name === 'High Risk')?.count || 0
   };
 
   return (
     <div className="min-h-screen bg-primary-50 dark:bg-gray-900 py-12 transition-all duration-300">
+      {error && (
+        <div className="max-w-2xl mx-auto mb-6 p-4 bg-red-100 text-red-700 rounded-xl border border-red-300 text-center">
+          {error}
+        </div>
+      )}
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+        {(!recentLogs || recentLogs.length === 0) && !error && (
+          <div className="text-center py-12 text-white text-lg">No meal logs found. Log a meal to see your dashboard analytics.</div>
+        )}
         {/* Header */}
         <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center mb-8">
           <div>
@@ -162,55 +271,66 @@ const Dashboard = () => {
             </div>
 
             <div className="space-y-4">
-              {recentLogs.map((log) => (
-                <div
-                  key={log.id}
-                  className={`
-                    p-4 rounded-lg border-2 transition-colors duration-200
-                    ${log.riskLevel === 'high' 
-                      ? 'border-danger-200 bg-danger-50 dark:border-danger-700 dark:bg-danger-900/20' 
-                      : log.riskLevel === 'medium'
-                      ? 'border-warning-200 bg-warning-50 dark:border-warning-700 dark:bg-warning-900/20'
-                      : 'border-success-200 bg-success-50 dark:border-success-700 dark:bg-success-900/20'
-                    }
-                  `}
-                >
-                  <div className="flex items-center justify-between">
-                    <div className="flex items-center space-x-4">
-                      <div className={`
-                        p-2 rounded-full
-                        ${log.riskLevel === 'high' ? 'bg-danger-200 dark:bg-danger-800' : 
-                          log.riskLevel === 'medium' ? 'bg-warning-200 dark:bg-warning-800' :
-                          'bg-success-200 dark:bg-success-800'}
-                      `}>
-                        {log.riskLevel !== 'low' ? (
-                          <ExclamationTriangleIcon className={`h-5 w-5 ${
-                            log.riskLevel === 'high' ? 'text-danger-600 dark:text-danger-400' : 'text-warning-600 dark:text-warning-400'
-                          }`} />
-                        ) : (
-                          <CheckCircleIcon className="h-5 w-5 text-success-600 dark:text-success-400" />
+              {recentLogs.length === 0 ? (
+                <div className="p-4 rounded-lg border-2 border-neutral-300 dark:border-neutral-700 bg-neutral-100 dark:bg-neutral-900 text-center text-neutral-500 dark:text-neutral-400">
+                  No meal logs found. Log a meal to see your recent entries here.
+                </div>
+              ) : recentLogs.map((log) => {
+                // Extract meal info (support array or single)
+                const mealName = Array.isArray(log.meals_taken) && log.meals_taken.length > 0 ? log.meals_taken[0].meal : (log.meal || '');
+                const fasting = log.sugar_level_fasting || log.fastingSugar || '';
+                const postMeal = log.sugar_level_post || log.postMealSugar || '';
+                const createdAt = log.createdAt?.toDate?.() ? log.createdAt.toDate().toLocaleDateString() : '';
+                const time = Array.isArray(log.meals_taken) && log.meals_taken.length > 0 ? log.meals_taken[0].time_of_day : (log.time_of_day || '');
+                const risk = log.riskLevel || log.prediction?.risk_level || log.prediction?.risk || (log.prediction?.recommendations && log.prediction.recommendations[0]?.risk_level) || '';
+                return (
+                  <div
+                    key={log.id}
+                    className={`
+                      p-4 rounded-lg border-2 transition-colors duration-200
+                      ${risk === 'high' 
+                        ? 'border-danger-600 bg-danger-700 text-white' 
+                        : risk === 'medium'
+                        ? 'border-warning-200 bg-warning-50 dark:border-warning-700 dark:bg-warning-900/20'
+                        : 'border-success-200 bg-success-50 dark:border-success-700 dark:bg-success-900/20'
+                      }
+                    `}
+                  >
+                    <div className="flex items-center justify-between">
+                      <div className="flex items-center space-x-4">
+                        {risk !== 'high' && (
+                          <div className={`
+                            p-2 rounded-full
+                            ${risk === 'medium' ? 'bg-warning-200 dark:bg-warning-800' : 'bg-success-200 dark:bg-success-800'}
+                          `}>
+                            {risk === 'medium' ? (
+                              <ExclamationTriangleIcon className="h-5 w-5 text-warning-600 dark:text-warning-400" />
+                            ) : (
+                              <CheckCircleIcon className="h-5 w-5 text-success-600 dark:text-success-400" />
+                            )}
+                          </div>
                         )}
-                      </div>
-                      <div>
-                        <h3 className="font-semibold text-gray-900 dark:text-white">{log.meal}</h3>
-                        <p className="text-sm text-gray-600 dark:text-gray-400">{log.date} • {log.time}</p>
-                      </div>
-                    </div>
-                    <div className="text-right">
-                      <div className="flex space-x-4 text-sm">
                         <div>
-                          <p className="text-gray-600 dark:text-gray-400">Fasting</p>
-                          <p className="font-semibold text-gray-900 dark:text-white">{log.fastingSugar} mg/dL</p>
+                          <h3 className={`font-semibold ${risk === 'high' ? 'text-white' : 'text-gray-900 dark:text-white'}`}>{mealName || '-'}</h3>
+                          <p className={`text-sm ${risk === 'high' ? 'text-white' : 'text-gray-600 dark:text-gray-400'}`}>{createdAt} {time ? `• ${time}` : ''}</p>
                         </div>
-                        <div>
-                          <p className="text-gray-600 dark:text-gray-400">Post-Meal</p>
-                          <p className="font-semibold text-gray-900 dark:text-white">{log.postMealSugar} mg/dL</p>
+                      </div>
+                      <div className="text-right">
+                        <div className="flex space-x-4 text-sm">
+                          <div>
+                            <p className={`text-gray-600 dark:text-gray-400 ${risk === 'high' ? 'text-white' : ''}`}>Fasting</p>
+                            <p className={`font-semibold ${risk === 'high' ? 'text-white' : 'text-gray-900 dark:text-white'}`}>{fasting ? `${fasting} mg/dL` : '-'}</p>
+                          </div>
+                          <div>
+                            <p className={`text-gray-600 dark:text-gray-400 ${risk === 'high' ? 'text-white' : ''}`}>Post-Meal</p>
+                            <p className={`font-semibold ${risk === 'high' ? 'text-white' : 'text-gray-900 dark:text-white'}`}>{postMeal ? `${postMeal} mg/dL` : '-'}</p>
+                          </div>
                         </div>
                       </div>
                     </div>
                   </div>
-                </div>
-              ))}
+                );
+              })}
             </div>
           </div>
 
@@ -245,7 +365,15 @@ const Dashboard = () => {
                 </div>
               </Link>
 
-              <button className="w-full p-4 bg-success-50 dark:bg-success-900/20 border border-success-200 dark:border-success-700 rounded-lg hover:bg-success-100 dark:hover:bg-success-900/30 transition-colors duration-200">
+              <button 
+                className="w-full p-4 bg-success-50 dark:bg-success-900/20 border border-success-200 dark:border-success-700 rounded-lg hover:bg-success-100 dark:hover:bg-success-900/30 transition-colors duration-200"
+                onClick={() => {
+                  const element = document.getElementById('meal-recommendations');
+                  if (element) {
+                    element.scrollIntoView({ behavior: 'smooth', block: 'start' });
+                  }
+                }}
+              >
                 <div className="flex items-center space-x-3">
                   <SparklesIcon className="h-6 w-6 text-success-600 dark:text-success-400" />
                   <div className="text-left">
@@ -281,8 +409,9 @@ const Dashboard = () => {
             
             {/* Meal Risk Distribution Donut Chart */}
             <MealRiskDonutChart 
-              data={riskData?.data} 
-              title="Meal Risk Analysis"
+              data={riskData?.mealData} 
+              title="Recent Meals Analysis"
+              showMealNames={true}
             />
           </div>
 
@@ -351,7 +480,9 @@ const Dashboard = () => {
         </div>
 
         {/* AI Meal Recommendations */}
-        <SafeMealSuggestions className="mb-8" />
+        <div id="meal-recommendations">
+          <SafeMealSuggestions className="mb-8" />
+        </div>
 
         {/* Coming Soon Section */}
         <div className="bg-primary-600 rounded-xl p-6 text-white text-center">

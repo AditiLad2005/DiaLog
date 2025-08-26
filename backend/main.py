@@ -1,3 +1,28 @@
+ # --- Firestore Backend Logging ---
+from firebase_admin_setup import db as firestore_db
+from firebase_admin import firestore
+from pydantic import BaseModel
+
+
+# Pydantic model for meal log
+
+# Accepts a list of meals per log
+class MealLogMeal(BaseModel):
+    meal_name: str
+    quantity: int
+    unit: str
+    time_of_day: str
+
+class MealLog(BaseModel):
+    userId: str
+    sugar_level_fasting: float
+    sugar_level_post: float
+    meals: list[MealLogMeal]
+    createdAt: str = None  # Optional, can be set by backend
+
+
+
+
 # backend/main.py
 
 from fastapi import FastAPI, HTTPException, Query
@@ -55,6 +80,65 @@ app.add_middleware(
 BASE_DIR = Path(__file__).resolve().parent
 DATA_DIR = BASE_DIR / "data"
 MODEL_DIR = BASE_DIR / "models"
+
+
+# Endpoint to log each meal in the list to Firestore
+@app.post("/log-meal-firestore")
+async def log_meal_to_firestore(log: MealLog):
+    try:
+        results = []
+        for meal in log.meals:
+            # Prepare prediction request for each meal
+            predict_req = MealRequest(
+                age=0,  # If you want to add age, gender, etc., pass from frontend
+                gender="Male",
+                weight_kg=0,
+                height_cm=0,
+                fasting_sugar=log.sugar_level_fasting,
+                post_meal_sugar=log.sugar_level_post,
+                meal_taken=meal.meal_name,
+                time_of_day=meal.time_of_day,
+                portion_size=meal.quantity,
+                portion_unit=meal.unit
+            )
+            prediction = await predict_meal_safety(predict_req)
+            # Prepare log entry
+            log_entry = {
+                "userId": log.userId,
+                "meal_name": meal.meal_name,
+                "quantity": meal.quantity,
+                "unit": meal.unit,
+                "time_of_day": meal.time_of_day,
+                "sugar_level_fasting": log.sugar_level_fasting,
+                "sugar_level_post": log.sugar_level_post,
+                "prediction": prediction.dict(),
+                "createdAt": firestore.SERVER_TIMESTAMP if not log.createdAt else log.createdAt
+            }
+            doc_ref = firestore_db.collection("logs").add(log_entry)
+            results.append({"doc_id": doc_ref[1].id, "meal": meal.meal_name, "risk": prediction.risk_level})
+        # Calculate overall risk for the meal event
+        risk_levels = [r["risk"] for r in results]
+        if "high" in risk_levels:
+            overall_risk = "high"
+        elif "medium" in risk_levels:
+            overall_risk = "medium"
+        else:
+            overall_risk = "low"
+
+        summary_entry = {
+            "userId": log.userId,
+            "meals": [r["meal"] for r in results],
+            "sugar_level_fasting": log.sugar_level_fasting,
+            "sugar_level_post": log.sugar_level_post,
+            "overall_risk": overall_risk,
+            "individual_risks": risk_levels,
+            "createdAt": firestore.SERVER_TIMESTAMP if not log.createdAt else log.createdAt
+        }
+        firestore_db.collection("logs_summary").add(summary_entry)
+
+        return {"success": True, "results": results, "overall_risk": overall_risk}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Failed to log meals: {str(e)}")
 
 # Load the food dataset directly
 try:
@@ -278,29 +362,49 @@ async def predict_meal_safety(request: MealRequest):
         # Make prediction
         prediction = model.predict(features_scaled)[0]
         prediction_proba = model.predict_proba(features_scaled)[0]
-        
-        # Determine safety and confidence
+
+        # Determine safety and confidence from model
         is_safe = prediction == 1
         confidence = float(max(prediction_proba))
+
+        # --- More realistic rule-based health check ---
+        high_carbs = float(food_row.get('carbs_g', 0)) > 50  # Increased from 30 to 50
+        very_high_gi = float(food_row.get('glycemic_index', 50)) > 85  # Increased from 70 to 85
+        very_high_sugar = request.post_meal_sugar > 200  # Increased from 180 to 200
+        very_large_portion = request.portion_size > 2.5  # Increased from 1.5 to 2.5
+        avoid_diabetic = str(food_row.get('avoid_for_diabetic', '')).strip().lower() == 'yes'
         
-        # Determine risk level
-        if confidence > 0.8:
-            risk_level = "Low" if is_safe else "High"
-        elif confidence > 0.6:
-            risk_level = "Medium"
+        # Additional context factors
+        late_night = 'late' in request.time_of_day.lower() or '9-11' in request.time_of_day
+        high_calories = float(food_row.get('calories_kcal', 0)) * request.portion_size > 600
+        
+        # Count severe risk factors only
+        severe_risks = sum([very_high_gi, very_high_sugar, very_large_portion, avoid_diabetic])
+        moderate_risks = sum([high_carbs, late_night, high_calories])
+
+        # More nuanced risk assessment
+        if severe_risks >= 2 or (severe_risks >= 1 and moderate_risks >= 2):
+            is_safe = False
+            risk_level = "high"
+            message = "This meal has multiple factors that may significantly impact blood sugar levels."
+        elif severe_risks == 1 or moderate_risks >= 2:
+            # Keep model prediction but mark as medium risk
+            risk_level = "medium" 
+            message = f"This meal may require some caution. Monitor your blood sugar levels. Confidence: {confidence:.1%}"
+        elif moderate_risks == 1:
+            risk_level = "low" if is_safe else "medium"
+            message = f"This meal is generally {'safe' if is_safe else 'acceptable'} for your profile. Confidence: {confidence:.1%}"
         else:
-            risk_level = "Uncertain"
-        
-        # Generate message
-        safety_text = "safe" if is_safe else "requires caution"
-        message = f"This meal is predicted to be {safety_text} for your current health profile. Confidence: {confidence:.1%}"
-        
+            # No significant risk factors - trust the model
+            risk_level = "low" if is_safe else "medium"
+            message = f"This meal appears {'safe' if is_safe else 'acceptable'} for your current health profile. Confidence: {confidence:.1%}"
+
         # Get nutritional information
         nutritional_info = get_nutritional_info(request.meal_taken, request.portion_size)
-        
+
         # Generate recommendations
         recommendations = generate_recommendations(request.meal_taken, is_safe, bmi)
-        
+
         return PredictionResponse(
             is_safe=is_safe,
             confidence=confidence,

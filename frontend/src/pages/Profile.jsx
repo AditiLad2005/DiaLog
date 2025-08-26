@@ -1,13 +1,11 @@
 import React, { useState } from 'react';
+import { auth } from '../services/firebase';
+import { saveUserProfile, fetchUserProfile } from '../services/firebase';
 import { 
   UserIcon, 
-  EnvelopeIcon, 
-  CalendarDaysIcon,
   ScaleIcon,
   ArrowPathIcon,
-  CheckIcon,
-  CakeIcon,
-  HeartIcon
+  CheckIcon
 } from '@heroicons/react/24/outline';
 
 const Profile = () => {
@@ -21,9 +19,30 @@ const Profile = () => {
     heightUnit: 'cm',
     weightUnit: 'kg'
   });
-
   const [bmi, setBmi] = useState(null);
   const [isLoading, setIsLoading] = useState(false);
+  const [isEditing, setIsEditing] = useState(false);
+  // Fetch profile data on mount
+  React.useEffect(() => {
+    const fetchProfile = async () => {
+      const user = auth.currentUser;
+      if (user) {
+        let profile = await fetchUserProfile(user.uid);
+        if (profile) {
+          setFormData({
+            ...profile,
+            email: user.email || profile.email || ''
+          });
+        } else {
+          setFormData(prev => ({
+            ...prev,
+            email: user.email || ''
+          }));
+        }
+      }
+    };
+    fetchProfile();
+  }, []);
 
   // Calculate BMI whenever height or weight changes
   React.useEffect(() => {
@@ -50,7 +69,7 @@ const Profile = () => {
     } else {
       setBmi(null);
     }
-  }, [formData.height, formData.weight, formData.heightUnit, formData.weightUnit]);
+  }, [formData]);
 
   const handleInputChange = (e) => {
     const { name, value } = e.target;
@@ -70,15 +89,19 @@ const Profile = () => {
   const handleSubmit = async (e) => {
     e.preventDefault();
     setIsLoading(true);
-
-    // Simulate API call
-    await new Promise(resolve => setTimeout(resolve, 1000));
-    
-    console.log('Profile data:', { ...formData, bmi });
+    try {
+      const user = auth.currentUser;
+      if (!user) {
+        alert('You must be logged in to save your profile.');
+        setIsLoading(false);
+        return;
+      }
+      await saveUserProfile(user.uid, { ...formData, bmi });
+      alert('Profile saved successfully!');
+    } catch (error) {
+      alert('Error saving profile: ' + error.message);
+    }
     setIsLoading(false);
-    
-    // In a real app, you'd handle the response and redirect
-    alert('Profile saved successfully!');
   };
 
   const isFormValid = formData.name && formData.email && formData.age && formData.gender;
@@ -121,6 +144,7 @@ const Profile = () => {
                     className="w-full px-4 py-3 rounded-xl border border-neutral-300 dark:border-neutral-600 bg-white dark:bg-gray-700 text-neutral-900 dark:text-white focus:ring-2 focus:ring-primary-500 focus:border-transparent transition-all duration-200"
                     placeholder="Enter your full name"
                     required
+                    disabled={!isEditing}
                   />
                 </div>
 
@@ -137,6 +161,7 @@ const Profile = () => {
                     className="w-full px-4 py-3 rounded-xl border border-neutral-300 dark:border-neutral-600 bg-white dark:bg-gray-700 text-neutral-900 dark:text-white focus:ring-2 focus:ring-primary-500 focus:border-transparent transition-all duration-200"
                     placeholder="Enter your email"
                     required
+                    disabled
                   />
                 </div>
 
@@ -155,6 +180,7 @@ const Profile = () => {
                     min="1"
                     max="120"
                     required
+                    disabled={!isEditing}
                   />
                 </div>
 
@@ -169,6 +195,7 @@ const Profile = () => {
                     onChange={handleInputChange}
                     className="w-full px-4 py-3 rounded-xl border border-neutral-300 dark:border-neutral-600 bg-white dark:bg-gray-700 text-neutral-900 dark:text-white focus:ring-2 focus:ring-primary-500 focus:border-transparent transition-all duration-200"
                     required
+                    disabled={!isEditing}
                   >
                     <option value="">Select gender</option>
                     <option value="male">Male</option>
@@ -200,12 +227,14 @@ const Profile = () => {
                       className="flex-1 px-4 py-3 rounded-xl border border-neutral-300 dark:border-neutral-600 bg-white dark:bg-gray-700 text-neutral-900 dark:text-white focus:ring-2 focus:ring-primary-500 focus:border-transparent transition-all duration-200"
                       placeholder="Height"
                       required
+                      disabled={!isEditing}
                     />
                     <select
                       name="heightUnit"
                       value={formData.heightUnit}
                       onChange={handleInputChange}
                       className="px-3 py-3 rounded-xl border border-neutral-300 dark:border-neutral-600 bg-white dark:bg-gray-700 text-neutral-900 dark:text-white focus:ring-2 focus:ring-primary-500 focus:border-transparent transition-all duration-200"
+                      disabled={!isEditing}
                     >
                       <option value="cm">cm</option>
                       <option value="ft">ft</option>
@@ -226,12 +255,14 @@ const Profile = () => {
                       className="flex-1 px-4 py-3 rounded-xl border border-neutral-300 dark:border-neutral-600 bg-white dark:bg-gray-700 text-neutral-900 dark:text-white focus:ring-2 focus:ring-primary-500 focus:border-transparent transition-all duration-200"
                       placeholder="Weight"
                       required
+                      disabled={!isEditing}
                     />
                     <select
                       name="weightUnit"
                       value={formData.weightUnit}
                       onChange={handleInputChange}
                       className="px-3 py-3 rounded-xl border border-neutral-300 dark:border-neutral-600 bg-white dark:bg-gray-700 text-neutral-900 dark:text-white focus:ring-2 focus:ring-primary-500 focus:border-transparent transition-all duration-200"
+                      disabled={!isEditing}
                     >
                       <option value="kg">kg</option>
                       <option value="lbs">lbs</option>
@@ -261,10 +292,10 @@ const Profile = () => {
             <div className="pt-6">
               <button
                 type="submit"
-                disabled={!isFormValid || isLoading}
+                disabled={!isFormValid || isLoading || !isEditing}
                 className={`
                   w-full flex items-center justify-center px-6 py-4 rounded-xl font-semibold text-lg transition-all duration-200
-                  ${isFormValid && !isLoading
+                  ${isFormValid && !isLoading && isEditing
                     ? 'bg-primary-600 hover:bg-primary-700 text-white shadow-medium hover:shadow-strong transform hover:-translate-y-1'
                     : 'bg-neutral-300 dark:bg-neutral-700 text-neutral-500 dark:text-neutral-400 cursor-not-allowed'
                   }
@@ -281,6 +312,13 @@ const Profile = () => {
                     Save Profile
                   </>
                 )}
+              </button>
+              <button
+                type="button"
+                className="mt-4 w-full flex items-center justify-center px-6 py-3 rounded-xl font-semibold text-base bg-primary-100 dark:bg-primary-900/20 text-primary-700 dark:text-primary-400 hover:bg-primary-200 dark:hover:bg-primary-900/40 transition-all duration-200"
+                onClick={() => setIsEditing((prev) => !prev)}
+              >
+                {isEditing ? 'Cancel' : 'Edit'}
               </button>
             </div>
           </form>
