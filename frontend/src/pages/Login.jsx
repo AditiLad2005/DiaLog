@@ -48,7 +48,7 @@ const RegisterProfile = () => {
     } else {
       setBmi(null);
     }
-  }, [formData.height, formData.weight, formData.heightUnit, formData.weightUnit]);
+  }, [formData]);
 
   const handleInputChange = (e) => {
     const { name, value } = e.target;

@@ -4,7 +4,8 @@ import Navbar from './components/Navbar';
 import Footer from './components/Footer';
 import Home from './pages/Home';
 import Profile from './pages/Profile';
-import RegisterProfile from './pages/Login'; // Keep for login functionality
+// ...existing code...
+import LoginSignup from './pages/LoginSignup';
 import MealLog from './pages/MealLog';
 import Dashboard from './pages/Dashboard';
 import Feedback from './pages/Feedback';
@@ -27,8 +28,8 @@ function App() {
             {/* Profile Page */}
             <Route path="/profile" element={<Profile />} />
             
-            {/* Login/Registration Page */}
-            <Route path="/login" element={<RegisterProfile />} />
+            {/* Login/Signup Page */}
+            <Route path="/auth" element={<LoginSignup />} />
             
             {/* Meal Logging */}
             <Route path="/meal-log" element={<MealLog />} />

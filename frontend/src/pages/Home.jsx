@@ -1,5 +1,6 @@
-import React from 'react';
-import { Link } from 'react-router-dom';
+import React, { useState, useEffect } from 'react';
+import { Link, useNavigate } from 'react-router-dom';
+import { auth } from '../services/firebase';
 import { 
   ChartBarIcon, 
   HeartIcon, 
@@ -31,6 +32,37 @@ const Home = () => {
     }
   ];
 
+  const [user, setUser] = useState(null);
+  const navigate = useNavigate();
+
+  useEffect(() => {
+    const unsubscribe = auth.onAuthStateChanged((currentUser) => {
+      setUser(currentUser);
+      if (currentUser) {
+        navigate('/dashboard');
+      }
+    });
+    return () => unsubscribe();
+  }, [navigate]);
+
+  const handleProfileClick = (e) => {
+    e.preventDefault();
+    if (!user) {
+      navigate('/auth');
+    } else {
+      navigate('/profile');
+    }
+  };
+
+  const handleLogClick = (e) => {
+    e.preventDefault();
+    if (!user) {
+      navigate('/auth');
+    } else {
+      navigate('/meal-log');
+    }
+  };
+
   return (
     <div className="min-h-screen bg-primary-50 dark:bg-gray-900 transition-all duration-300">
       {/* Hero Section */}
@@ -59,25 +91,40 @@ const Home = () => {
               about your health with intelligent analytics and personalized insights.
             </p>
 
-            {/* CTA Buttons */}
-            <div className="flex flex-col sm:flex-row justify-center items-center space-y-4 sm:space-y-0 sm:space-x-6 animate-slide-up">
-              <Link
-                to="/meal-log"
-                className="inline-flex items-center px-8 py-4 bg-primary-600 hover:bg-primary-700 text-white text-lg font-semibold rounded-xl transition-all duration-300 shadow-medium hover:shadow-strong transform hover:-translate-y-1"
-              >
-                <ClipboardDocumentListIcon className="h-6 w-6 mr-3" />
-                Log My Data
-                <ArrowRightIcon className="h-5 w-5 ml-2" />
-              </Link>
-              
-              <Link
-                to="/dashboard"
-                className="inline-flex items-center px-8 py-4 bg-white/80 dark:bg-gray-800/80 backdrop-blur-sm text-primary-600 dark:text-primary-400 text-lg font-semibold rounded-xl border-2 border-primary-200 dark:border-primary-700 hover:border-primary-300 dark:hover:border-primary-600 hover:bg-primary-50 dark:hover:bg-primary-900/20 transition-all duration-300 shadow-soft hover:shadow-medium"
-              >
-                <ChartBarIcon className="h-6 w-6 mr-3" />
-                View Dashboard
-              </Link>
-            </div>
+            {/* ...existing code... */}
+            {/* ...existing code... */}
+            {/* Buttons after authentication */}
+            {user && (
+              <div className="flex flex-col sm:flex-row justify-center items-center space-y-4 sm:space-y-0 sm:space-x-6 animate-slide-up">
+                <Link
+                  to="/meal-log"
+                  className="inline-flex items-center px-8 py-4 bg-primary-600 hover:bg-primary-700 text-white text-lg font-semibold rounded-xl transition-all duration-300 shadow-medium hover:shadow-strong transform hover:-translate-y-1"
+                >
+                  <ClipboardDocumentListIcon className="h-6 w-6 mr-3" />
+                  Log My Data
+                  <ArrowRightIcon className="h-5 w-5 ml-2" />
+                </Link>
+                <Link
+                  to="/dashboard"
+                  className="inline-flex items-center px-8 py-4 bg-white/80 dark:bg-gray-800/80 backdrop-blur-sm text-primary-600 dark:text-primary-400 text-lg font-semibold rounded-xl border-2 border-primary-200 dark:border-primary-700 hover:border-primary-300 dark:hover:border-primary-600 hover:bg-primary-50 dark:hover:bg-primary-900/20 transition-all duration-300 shadow-soft hover:shadow-medium"
+                >
+                  <ChartBarIcon className="h-6 w-6 mr-3" />
+                  View Dashboard
+                </Link>
+              </div>
+            )}
+                {/* Start Logging button below insights section, only before authentication */}
+                {!user && (
+                  <div className="flex justify-center mt-8 animate-slide-up">
+                    <button
+                      onClick={handleLogClick}
+                      className="inline-flex items-center px-8 py-4 bg-primary-800 text-white text-lg font-semibold rounded-xl hover:bg-primary-900 transition-all duration-200 border-2 border-primary-500"
+                    >
+                      Start Logging
+                      <ArrowRightIcon className="h-5 w-5 ml-2" />
+                    </button>
+                  </div>
+                )}
           </div>
         </div>
 
@@ -138,21 +185,13 @@ const Home = () => {
           </p>
           
           <div className="flex flex-col sm:flex-row justify-center items-center space-y-4 sm:space-y-0 sm:space-x-6">
-            <Link
-              to="/profile"
+            <button
+              onClick={handleProfileClick}
               className="inline-flex items-center px-8 py-4 bg-white text-primary-600 text-lg font-semibold rounded-xl hover:bg-gray-50 transition-all duration-200 shadow-medium hover:shadow-strong transform hover:-translate-y-1"
             >
               <UserCircleIcon className="h-6 w-6 mr-3" />
               Set Up Profile
-            </Link>
-            
-            <Link
-              to="/meal-log"
-              className="inline-flex items-center px-8 py-4 bg-primary-800 text-white text-lg font-semibold rounded-xl hover:bg-primary-900 transition-all duration-200 border-2 border-primary-500"
-            >
-              Start Logging
-              <ArrowRightIcon className="h-5 w-5 ml-2" />
-            </Link>
+            </button>
           </div>
         </div>
       </section>
