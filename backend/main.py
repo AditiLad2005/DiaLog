@@ -2,6 +2,7 @@
 from firebase_admin_setup import db as firestore_db, firebase_initialized
 from firebase_admin import firestore
 from pydantic import BaseModel
+from improved_model_system import MealSafetyPredictor, RiskLevel, run_acceptance_tests
 
 
 # Pydantic model for meal log
@@ -160,20 +161,35 @@ except Exception as e:
 model = None
 scaler = None
 feature_columns = None
+# New improved predictor
+meal_safety_predictor = None
 
 # Load model and artifacts
 def load_model_artifacts():
-    global model, scaler, feature_columns
+    global model, scaler, feature_columns, meal_safety_predictor
     try:
+        # Load traditional model artifacts (for backward compatibility)
         if os.path.exists(MODEL_DIR / "diabetes_model.joblib"):
             model = joblib.load(MODEL_DIR / "diabetes_model.joblib")
-            scaler = joblib.load(MODEL_DIR / "scaler.joblib")
-            feature_columns = joblib.load(MODEL_DIR / "feature_columns.joblib")
-            print("✅ Model artifacts loaded successfully")
-            return True
+            scaler = joblib.load(MODEL_DIR / "scaler.joblib") if os.path.exists(MODEL_DIR / "scaler.joblib") else None
+            feature_columns = joblib.load(MODEL_DIR / "feature_columns.joblib") if os.path.exists(MODEL_DIR / "feature_columns.joblib") else None
+            print("✅ Traditional model artifacts loaded")
+        
+        # Initialize improved prediction system
+        meal_safety_predictor = MealSafetyPredictor()
+        meal_safety_predictor.load_food_dataset(DATA_DIR / "Food_Master_Dataset_.csv")
+        
+        # If we have trained model, attach it to the predictor
+        if model is not None:
+            meal_safety_predictor.model = model
+            meal_safety_predictor.scaler = scaler
+            meal_safety_predictor.is_trained = True
+            print("✅ Improved prediction system initialized with existing model")
         else:
-            print("❌ Model files not found. Please run train_model.py first")
-            return False
+            print("⚠️ No trained model found - using guardrails-only mode")
+        
+        return True
+        
     except Exception as e:
         print(f"❌ Error loading model: {e}")
         return False
@@ -266,6 +282,85 @@ def calculate_bmi(weight_kg: float, height_cm: float) -> float:
     height_m = height_cm / 100
     return round(weight_kg / (height_m ** 2), 1)
 
+def get_nutritional_info_enhanced(food_name: str, portion_size_g: float, 
+                                portion_features: Dict[str, float]) -> NutritionalInfo:
+    """
+    Enhanced nutritional info that includes portion-adjusted values.
+    """
+    if food_name not in food_df.index:
+        return None
+    
+    # Use portion-aware features for more accurate info
+    return NutritionalInfo(
+        calories=portion_features['calories_effective_kcal'],
+        carbs_g=portion_features['carbs_effective_g'],
+        protein_g=food_df.loc[food_name].get('protein_g', 0) * portion_features['portion_multiplier'],
+        fat_g=food_df.loc[food_name].get('fat_g', 0) * portion_features['portion_multiplier'],
+        fiber_g=food_df.loc[food_name].get('fiber_g', 0) * portion_features['portion_multiplier']
+    )
+
+def generate_enhanced_recommendations(food_name: str, prediction_result: Dict[str, any], 
+                                   bmi: float, user_data: Dict[str, any]) -> List[Recommendation]:
+    """
+    Generate recommendations based on the improved prediction system.
+    """
+    recommendations = []
+    risk_level = prediction_result['risk_level']
+    reasons = prediction_result.get('reasons', [])
+    portion_features = prediction_result.get('portion_features', {})
+    
+    # Risk-specific recommendations
+    if risk_level == 'unsafe':
+        recommendations.append(Recommendation(
+            name="Avoid This Meal",
+            reason="Multiple risk factors detected. Consider alternatives or significantly reduce portion."
+        ))
+        
+        if portion_features.get('portion_multiplier', 1) > 2:
+            recommendations.append(Recommendation(
+                name="Reduce Portion Size", 
+                reason=f"Current portion is {portion_features['portion_multiplier']:.1f}× normal. Try 0.5-1× instead."
+            ))
+            
+        if portion_features.get('GL_portion', 0) > 20:
+            recommendations.append(Recommendation(
+                name="Add Fiber and Protein",
+                reason="High glycemic load. Pair with vegetables and protein to slow absorption."
+            ))
+            
+    elif risk_level == 'caution':
+        recommendations.append(Recommendation(
+            name="Monitor Closely",
+            reason="Some risk factors present. Check blood sugar 2 hours after eating."
+        ))
+        
+        if portion_features.get('sugar_effective_g', 0) > 25:
+            recommendations.append(Recommendation(
+                name="Post-Meal Walk",
+                reason=f"High sugar content ({portion_features['sugar_effective_g']:.0f}g). Walk for 15-20 minutes."
+            ))
+            
+    else:  # safe
+        recommendations.append(Recommendation(
+            name="Good Choice",
+            reason="This meal appears suitable for your profile. Continue monitoring as usual."
+        ))
+    
+    # BMI-specific advice
+    if bmi > 25:
+        recommendations.append(Recommendation(
+            name="Portion Control",
+            reason="Focus on portion sizes to support healthy weight management."
+        ))
+    
+    # Always add general diabetes advice
+    recommendations.append(Recommendation(
+        name="Post-Meal Activity",
+        reason="Light physical activity after meals helps regulate blood sugar."
+    ))
+    
+    return recommendations
+
 def get_nutritional_info(food_name: str, portion_size: float) -> NutritionalInfo:
     if food_name not in food_df.index:
         return None
@@ -314,104 +409,70 @@ def generate_recommendations(food_name: str, is_safe: bool, bmi: float) -> List[
 
 @app.post("/predict", response_model=PredictionResponse)
 async def predict_meal_safety(request: MealRequest):
+    """
+    Improved meal safety prediction with hard guardrails and portion awareness.
+    """
     try:
-        if model is None:
-            raise HTTPException(status_code=503, detail="Model not loaded. Please check server configuration.")
+        global meal_safety_predictor
         
-        if food_df.empty:
-            raise HTTPException(status_code=500, detail="Food database not loaded")
+        if meal_safety_predictor is None:
+            raise HTTPException(status_code=503, detail="Prediction system not initialized")
         
-        # Validate food exists in database
-        if request.meal_taken not in food_df.index:
-            available_foods = [food for food in food_df.index if request.meal_taken.lower() in food.lower()][:5]
-            suggestion_text = f"Did you mean: {', '.join(available_foods)}" if available_foods else "Please check the food name."
-            raise HTTPException(
-                status_code=400, 
-                detail=f"Food '{request.meal_taken}' not found in database. {suggestion_text}"
-            )
+        # Convert portion unit to grams (simplified conversion)
+        portion_unit_to_grams = {
+            'cup': 200, 'bowl': 250, 'plate': 300, 'piece': 100,
+            'slice': 50, 'spoon': 15, 'glass': 250, 'g': 1, 'grams': 1
+        }
+        portion_size_g = request.portion_size * portion_unit_to_grams.get(request.portion_unit.lower(), 100)
         
         # Calculate BMI
         bmi = calculate_bmi(request.weight_kg, request.height_cm)
         
-        # Get food nutritional data
-        food_row = food_df.loc[request.meal_taken]
+        # Prepare user context for prediction
+        user_data = {
+            'age': request.age,
+            'gender': request.gender,
+            'bmi': bmi,
+            'fasting_sugar': request.fasting_sugar,
+            'post_meal_sugar': request.post_meal_sugar,
+            'time_of_day': request.time_of_day
+        }
         
-        # Prepare features for prediction
-        # Map categorical variables
-        gender_map = {'Male': 1, 'Female': 0}
-        time_map = {'Breakfast': 0, 'Lunch': 1, 'Dinner': 2, 'Snack': 3}
+        # Use improved prediction system
+        result = meal_safety_predictor.predict_meal_safety(
+            request.meal_taken, 
+            portion_size_g, 
+            user_data
+        )
         
-        # Create feature array matching training data
-        features = np.array([[
-            request.age,
-            gender_map.get(request.gender, 0),
-            request.weight_kg,
-            request.height_cm,
+        # Map risk levels to expected format
+        risk_mapping = {
+            'safe': ('low', True),
+            'caution': ('medium', False), 
+            'unsafe': ('high', False)
+        }
+        
+        risk_level, is_safe = risk_mapping.get(result['risk_level'], ('medium', False))
+        
+        # Create response message with explanation
+        message = result['explanation']
+        confidence = result['confidence']
+        
+        # Get nutritional information (enhanced with portion awareness)
+        nutritional_info = get_nutritional_info_enhanced(
+            request.meal_taken, 
+            portion_size_g, 
+            result['portion_features']
+        )
+        
+        # Generate enhanced recommendations based on guardrails
+        recommendations = generate_enhanced_recommendations(
+            request.meal_taken, 
+            result, 
             bmi,
-            request.fasting_sugar,
-            request.post_meal_sugar,
-            float(food_row.get('carbs_g', 0)),
-            float(food_row.get('protein_g', 0)),
-            float(food_row.get('fat_g', 0)),
-            float(food_row.get('fiber_g', 0)),
-            float(food_row.get('calories_kcal', 0)),
-            float(food_row.get('glycemic_index', 50)),
-            time_map.get(request.time_of_day, 0),
-            request.portion_size
-        ]])
+            user_data
+        )
         
-        # Scale features
-        if scaler is not None:
-            features_scaled = scaler.transform(features)
-        else:
-            features_scaled = features
-        
-        # Make prediction
-        prediction = model.predict(features_scaled)[0]
-        prediction_proba = model.predict_proba(features_scaled)[0]
-
-        # Determine safety and confidence from model
-        is_safe = prediction == 1
-        confidence = float(max(prediction_proba))
-
-        # --- More realistic rule-based health check ---
-        high_carbs = float(food_row.get('carbs_g', 0)) > 50  # Increased from 30 to 50
-        very_high_gi = float(food_row.get('glycemic_index', 50)) > 85  # Increased from 70 to 85
-        very_high_sugar = request.post_meal_sugar > 200  # Increased from 180 to 200
-        very_large_portion = request.portion_size > 2.5  # Increased from 1.5 to 2.5
-        avoid_diabetic = str(food_row.get('avoid_for_diabetic', '')).strip().lower() == 'yes'
-        
-        # Additional context factors
-        late_night = 'late' in request.time_of_day.lower() or '9-11' in request.time_of_day
-        high_calories = float(food_row.get('calories_kcal', 0)) * request.portion_size > 600
-        
-        # Count severe risk factors only
-        severe_risks = sum([very_high_gi, very_high_sugar, very_large_portion, avoid_diabetic])
-        moderate_risks = sum([high_carbs, late_night, high_calories])
-
-        # More nuanced risk assessment
-        if severe_risks >= 2 or (severe_risks >= 1 and moderate_risks >= 2):
-            is_safe = False
-            risk_level = "high"
-            message = "This meal has multiple factors that may significantly impact blood sugar levels."
-        elif severe_risks == 1 or moderate_risks >= 2:
-            # Keep model prediction but mark as medium risk
-            risk_level = "medium" 
-            message = f"This meal may require some caution. Monitor your blood sugar levels. Confidence: {confidence:.1%}"
-        elif moderate_risks == 1:
-            risk_level = "low" if is_safe else "medium"
-            message = f"This meal is generally {'safe' if is_safe else 'acceptable'} for your profile. Confidence: {confidence:.1%}"
-        else:
-            # No significant risk factors - trust the model
-            risk_level = "low" if is_safe else "medium"
-            message = f"This meal appears {'safe' if is_safe else 'acceptable'} for your current health profile. Confidence: {confidence:.1%}"
-
-        # Get nutritional information
-        nutritional_info = get_nutritional_info(request.meal_taken, request.portion_size)
-
-        # Generate recommendations
-        recommendations = generate_recommendations(request.meal_taken, is_safe, bmi)
-
         return PredictionResponse(
             is_safe=is_safe,
             confidence=confidence,
@@ -422,6 +483,8 @@ async def predict_meal_safety(request: MealRequest):
             recommendations=recommendations
         )
         
+    except ValueError as ve:
+        raise HTTPException(status_code=400, detail=str(ve))
     except HTTPException:
         raise
     except Exception as e:
@@ -457,6 +520,79 @@ async def get_food_details(food_name: str):
         raise
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Error fetching food details: {str(e)}")
+
+@app.get("/test-guardrails")
+async def test_guardrails():
+    """
+    Run acceptance tests for the improved prediction system.
+    """
+    try:
+        global meal_safety_predictor
+        
+        if meal_safety_predictor is None:
+            raise HTTPException(status_code=503, detail="Prediction system not initialized")
+        
+        # Run the acceptance tests
+        test_results = run_acceptance_tests(meal_safety_predictor)
+        
+        return {
+            "success": True,
+            "test_results": test_results,
+            "message": f"Tests completed: {test_results['passed']}/{test_results['passed'] + test_results['failed']} passed"
+        }
+        
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Test error: {str(e)}")
+
+@app.get("/predict-sample")
+async def predict_sample():
+    """
+    Sample prediction to demonstrate the improved system.
+    """
+    try:
+        global meal_safety_predictor
+        
+        if meal_safety_predictor is None:
+            raise HTTPException(status_code=503, detail="Prediction system not initialized")
+        
+        # Sample cases showing the improvements
+        sample_cases = [
+            {
+                "case": "Normal portion of safe food",
+                "meal": "Hot tea (Garam Chai)",
+                "portion_g": 200,
+                "user": {"age": 45, "gender": "Male", "bmi": 25, "fasting_sugar": 100, "time_of_day": "Breakfast"}
+            },
+            {
+                "case": "Large portion triggering guardrails",
+                "meal": "Plain cream cake", 
+                "portion_g": 150,
+                "user": {"age": 45, "gender": "Male", "bmi": 25, "fasting_sugar": 100, "time_of_day": "Snack"}
+            }
+        ]
+        
+        results = []
+        for case in sample_cases:
+            try:
+                prediction = meal_safety_predictor.predict_meal_safety(
+                    case["meal"], case["portion_g"], case["user"]
+                )
+                results.append({
+                    "case": case["case"],
+                    "meal": case["meal"], 
+                    "risk_level": prediction["risk_level"],
+                    "explanation": prediction["explanation"]
+                })
+            except Exception as e:
+                results.append({
+                    "case": case["case"],
+                    "error": str(e)
+                })
+        
+        return {"sample_predictions": results}
+        
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Sample prediction error: {str(e)}")
 
 if __name__ == "__main__":
     import uvicorn
