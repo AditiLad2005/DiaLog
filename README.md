@@ -28,37 +28,85 @@ A full-stack web application that helps diabetic patients analyze meal safety us
 
 ### 1. Clone & Setup
 ```bash
-cd frontend
-npm install
-npm start
+git clone <repo-url>
+cd DiaLog
 ```
-The app will run on `http://localhost:3000`
 
-### Backend Setup
+### 2. Environment Setup
+
+**IMPORTANT**: Create `.env` files for both frontend and backend with Firebase credentials.
+
+#### Frontend Environment (.env in frontend folder):
+```bash
+cd frontend
+# Create .env file with the following content:
+REACT_APP_FIREBASE_API_KEY=AIzaSyBJZo0lzCbdmS-AjWUEa8uBHn8LZ_XhA6s
+REACT_APP_FIREBASE_AUTH_DOMAIN=dialog-60c70.firebaseapp.com
+REACT_APP_FIREBASE_PROJECT_ID=dialog-60c70
+REACT_APP_FIREBASE_STORAGE_BUCKET=dialog-60c70.firebasestorage.app
+REACT_APP_FIREBASE_MESSAGING_SENDER_ID=430114540255
+REACT_APP_FIREBASE_APP_ID=1:430114540255:web:b86548d377978669a0f76a
+REACT_APP_FIREBASE_MEASUREMENT_ID=G-27XMPW2ZHM
+```
+
+#### Backend Environment (.env in backend folder):
 ```bash
 cd backend
-python -m venv venv
-source venv/bin/activate  # On Windows: venv\Scripts\activate
-pip install -r requirements.txt
-python main.py
+# Create .env file with Firebase Admin SDK credentials
+# (Get these from Firebase Console -> Project Settings -> Service Accounts)
 ```
-The API will run on `http://localhost:8000`
 
-### ML Model Training
+### 3. Backend Setup (FastAPI + ML Model)
+```bash
+cd backend
+
+# Create virtual environment
+python -m venv venv
+
+# Activate virtual environment
+# Windows:
+venv\Scripts\activate
+# Linux/Mac:
+source venv/bin/activate
+
+# Install dependencies (includes firebase-admin)
+pip install -r requirements.txt
+
+# Train the ML model (creates synthetic user data)
+python train_model.py
+
+# Test model loading
+python test_model.py
+
+# Start API server
+uvicorn main:app --reload --host 0.0.0.0 --port 8000
+```
+
+### 4. Frontend Setup (React + Tailwind)
 ```bash
 cd ../frontend
 
-# Install dependencies
+# Install dependencies (includes firebase)
 npm install
 
 # Start development server
 npm run dev
 ```
 
-### 4. Access the Application
+### 5. Access the Application
 - **Frontend**: http://localhost:3000
 - **Backend API**: http://localhost:8000
 - **API Documentation**: http://localhost:8000/docs
+
+## Firebase Integration
+
+Both frontend and backend connect to Firestore for:
+- **User Authentication** (frontend)
+- **Meal Logging** (both)
+- **User Profiles** (both)
+- **Data Synchronization** (both)
+
+**Note**: Without proper `.env` files, the application will not run correctly as Firebase connection is required for user data management.
 
 ## API Endpoints
 
@@ -69,16 +117,10 @@ GET /health
 
 ### Get Available Foods
 ```bash
-cd frontend
-npm install
-npm install react react-dom react-router-dom tailwindcss chart.js firebase
-# (Optional) If using create-react-app, install it globally:
-# npm install -g create-react-app
+GET /foods?search=chicken
 ```
-The app will run on `http://localhost:3000`
 
-### Backend
-
+### Predict Meal Safety
 ```bash
 POST /predict
 Content-Type: application/json
@@ -109,8 +151,18 @@ Content-Type: application/json
 
 ```
 DiaLog/
-│
-├── frontend/                  # React + Tailwind (handled by teammates)
+├── backend/
+│   ├── .env                 # Firebase Admin SDK config
+│   ├── main.py              # FastAPI application
+│   ├── train_model.py       # ML model training
+│   ├── test_model.py        # Model testing utilities
+│   ├── requirements.txt     # Python dependencies
+│   ├── data/
+│   │   └── Food_Master_Dataset_.csv
+│   ├── models/              # Trained model artifacts
+│   └── venv/               # Python virtual environment
+├── frontend/
+│   ├── .env                # React Firebase config
 │   ├── src/
 │   │   ├── components/
 │   │   │   └── MealCard.jsx # Main UI component
@@ -122,6 +174,22 @@ DiaLog/
 
 ## Troubleshooting
 
+### Environment Issues
+
+1. **Firebase Connection Error**: Ensure `.env` files exist in both directories
+```bash
+# Check if .env files exist
+ls frontend/.env
+ls backend/.env
+```
+
+2. **Missing Environment Variables**: Verify all Firebase keys are present
+```bash
+# In frontend, check React environment variables
+npm run dev
+# Should not show Firebase initialization errors
+```
+
 ### Backend Issues
 
 1. **Import Error**: Ensure virtual environment is activated
@@ -131,17 +199,18 @@ venv\Scripts\activate  # Windows
 source venv/bin/activate  # Linux/Mac
 ```
 
-2. **Model Not Found**: Run the training script
+2. **Firebase Admin Error**: Check if service account key or environment variables are set
+
+3. **Model Not Found**: Run the training script
 ```bash
 python train_model.py
 ```
 
-3. **Dataset Not Found**: Ensure `Food_Master_Dataset_.csv` is in `backend/data/`
-
 ### Frontend Issues
 
 1. **CORS Error**: Make sure backend is running on port 8000
-2. **API Connection**: Check if backend health endpoint responds: http://localhost:8000/health
+2. **Firebase Auth Error**: Check `.env` file in frontend directory
+3. **API Connection**: Verify backend health: http://localhost:8000/health
 
 ## Development
 
@@ -154,6 +223,13 @@ python train_model.py
 - Adjust Random Forest parameters in `train_model.py`
 - Add new features to the feature engineering pipeline
 - Collect real user data for better training
+
+## Security Note
+
+- Never commit `.env` files to version control
+- Both `.env` files are in `.gitignore`
+- Service account keys should be kept secure
+- Use environment variables in production
 
 ## Future Enhancements
 
@@ -186,3 +262,4 @@ DiaLog Team - Diabetes Management Solution
 - Machine learning libraries: scikit-learn, pandas, numpy
 - Frontend framework: React.js with Tailwind CSS
 - Backend framework: FastAPI
+- Firebase for real-time database and authentication

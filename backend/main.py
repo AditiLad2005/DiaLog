@@ -1,5 +1,5 @@
- # --- Firestore Backend Logging ---
-from firebase_admin_setup import db as firestore_db
+# --- Firestore Backend Logging ---
+from firebase_admin_setup import db as firestore_db, firebase_initialized
 from firebase_admin import firestore
 from pydantic import BaseModel
 
@@ -34,6 +34,10 @@ import numpy as np
 import os
 from typing import Optional, List, Dict, Any
 from pathlib import Path
+from dotenv import load_dotenv
+
+# Load environment variables
+load_dotenv()
 
 # Create FastAPI app
 app = FastAPI(
@@ -42,10 +46,10 @@ app = FastAPI(
     ## DiaLog API for Diabetes Meal Safety Prediction
 
     This API provides endpoints to:
-    * 🍽️ **Predict meal safety** for diabetic users
-    * 📊 **Get nutritional information** for foods
-    * 🥗 **Fetch available foods** from the database
-    * ❤️ **Check API health** and model status
+    * Predict meal safety for diabetic users
+    * Get nutritional information for foods
+    * Fetch available foods from the database
+    * Check API health and model status
 
     ### Model Information
     - Uses Random Forest Classifier trained on food nutritional data
@@ -85,6 +89,9 @@ MODEL_DIR = BASE_DIR / "models"
 # Endpoint to log each meal in the list to Firestore
 @app.post("/log-meal-firestore")
 async def log_meal_to_firestore(log: MealLog):
+    if not firebase_initialized or not firestore_db:
+        raise HTTPException(status_code=503, detail="Firebase/Firestore not available")
+    
     try:
         results = []
         for meal in log.meals:

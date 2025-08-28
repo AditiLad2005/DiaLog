@@ -10,12 +10,16 @@ firebase-debug.*.log*
 # Firebase cache
 .firebase/
 
-# Firebase config
+# Firebase config & secrets
+*firebase-adminsdk*.json
+serviceAccountKey.json
+firebase-key.json
+firebase-config.json
+.firebaserc
 
-# Uncomment this if you'd like others to create their own Firebase project.
-# For a team working on the same Firebase project(s), it is recommended to leave
-# it commented so all members can deploy to the same project(s) in .firebaserc.
-# .firebaserc
+# Firebase service account keys (backend and any subdirectory)
+**/serviceAccountKey.json
+**/*firebase-adminsdk*.json
 
 # Runtime data
 pids
@@ -63,8 +67,16 @@ node_modules/
 .yarn-integrity
 
 # dotenv environment variables file
+.env
+.env.local
+.env.development
+.env.production
 backend/.env
 frontend/.env
+**/.env
+**/.env.local
+**/.env.development
+**/.env.production
 
 
 # dataconnect generated files
