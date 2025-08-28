@@ -98,14 +98,15 @@ def create_enhanced_training_data(food_df: pd.DataFrame, n_samples: int = 3000) 
     return training_data
 
 
-def generate_labels_with_unsafe_focus(training_data: pd.DataFrame, food_df: pd.DataFrame, 
-                                    predictor: MealSafetyPredictor) -> np.ndarray:
+def generate_labels_with_smart_guardrails(training_data: pd.DataFrame, food_df: pd.DataFrame, 
+                                         predictor: MealSafetyPredictor) -> np.ndarray:
     """
-    Generate labels focusing on unsafe recall ≥ 0.9
+    Generate labels using the new smart guardrail logic
     """
-    print("🏷️ Generating safety labels with unsafe focus...")
+    print("🏷️ Generating labels with smart guardrail logic...")
     labels = []
     unsafe_count = 0
+    caution_count = 0
     
     for idx, row in training_data.iterrows():
         if idx % 500 == 0:
@@ -124,32 +125,39 @@ def generate_labels_with_unsafe_focus(training_data: pd.DataFrame, food_df: pd.D
                 'time_of_day': row['time_of_day']
             }
             
-            # Use guardrail system to determine safety
+            # Use NEW smart guardrail system to determine safety
             portion_features = predictor.compute_portion_features(food_row, portion_size_g)
             guardrail_risk, reasons = predictor.apply_hard_guardrails(food_row, portion_features, user_data)
             
-            # Conservative labeling for high recall
+            # Smart labeling based on guardrails and user context
             if guardrail_risk == RiskLevel.UNSAFE:
                 label = 0  # Unsafe
                 unsafe_count += 1
             elif guardrail_risk == RiskLevel.CAUTION:
-                # Be conservative: treat most caution as unsafe for training
-                if (row['post_meal_sugar'] > 160 or row['bmi'] > 30 or 
-                    row['age'] > 60 or portion_features['GL_portion'] > 15):
-                    label = 0  # Treat as unsafe
+                # For CAUTION foods, consider user health profile
+                if (row['post_meal_sugar'] > 170 or row['bmi'] > 32 or 
+                    row['age'] > 65 or portion_features['GL_portion'] > 18):
+                    label = 0  # Treat as unsafe for high-risk users
                     unsafe_count += 1
                 else:
-                    # Only some caution cases as safe
-                    label = 1 if np.random.random() < 0.3 else 0
+                    label = 1  # Safe for moderate-risk users
+            else:
+                # No guardrail triggered - consider user context and food quality
+                GL_portion = portion_features['GL_portion']
+                sugar_effective = portion_features['sugar_effective_g']
+                
+                if (row['post_meal_sugar'] > 180 or row['bmi'] > 35 or 
+                    (GL_portion > 20 and row['post_meal_sugar'] > 160)):
+                    label = 0  # High-risk user + high GL
+                    unsafe_count += 1
+                elif (GL_portion <= 8 and sugar_effective <= 10 and 
+                      row['post_meal_sugar'] <= 150 and row['bmi'] <= 28):
+                    label = 1  # Healthy food + healthy user
+                else:
+                    # Middle ground - slight bias toward safety
+                    label = 1 if np.random.random() < 0.7 else 0
                     if label == 0:
                         unsafe_count += 1
-            else:
-                # No guardrail triggered - mostly safe with some noise
-                if (row['post_meal_sugar'] > 180 or row['bmi'] > 35):
-                    label = 0  # High-risk user characteristics
-                    unsafe_count += 1
-                else:
-                    label = 1  # Safe
                     
             labels.append(label)
             
@@ -159,10 +167,12 @@ def generate_labels_with_unsafe_focus(training_data: pd.DataFrame, food_df: pd.D
             unsafe_count += 1
     
     labels = np.array(labels)
+    safe_count = len(labels) - unsafe_count
     unsafe_ratio = unsafe_count / len(labels)
-    print(f"✅ Label distribution:")
+    
+    print(f"✅ Smart Label Distribution:")
     print(f"   - Unsafe (0): {unsafe_count} ({unsafe_ratio:.1%})")
-    print(f"   - Safe (1): {len(labels) - unsafe_count} ({1-unsafe_ratio:.1%})")
+    print(f"   - Safe (1): {safe_count} ({1-unsafe_ratio:.1%})")
     
     return labels
 
@@ -187,8 +197,8 @@ def train_randomforest_model(food_csv_path: str, model_output_dir: str):
     # Generate training data
     training_data = create_enhanced_training_data(food_df, n_samples=4000)
     
-    # Generate labels with unsafe focus
-    y = generate_labels_with_unsafe_focus(training_data, food_df, predictor)
+    # Generate labels with smart guardrails
+    y = generate_labels_with_smart_guardrails(training_data, food_df, predictor)
     
     # Prepare features
     print("🔧 Engineering portion-aware features...")

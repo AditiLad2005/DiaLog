@@ -164,62 +164,86 @@ class MealSafetyPredictor:
         calories_effective_kcal = portion_features['calories_effective_kcal']
         avoid_for_diabetic = str(food_row.get('avoid_for_diabetic', '')).strip().lower() == 'yes'
         
-        # Rule 1: Avoid-for-diabetic rule
+        # Rule 1: Smart avoid-for-diabetic rule (consider nutritional context)
         if avoid_for_diabetic:
-            if portion_multiplier >= 1.0:
-                risk_level = RiskLevel.UNSAFE
-                reasons.append(f"Marked 'avoid for diabetic' at normal+ portion ({portion_multiplier:.1f}×)")
-            elif portion_multiplier < 1.0 and GL_portion >= 10:
-                risk_level = RiskLevel.UNSAFE
-                reasons.append(f"'Avoid for diabetic' food with high GL_portion ({GL_portion:.1f})")
+            # For truly healthy foods (very low GL and sugar), override dataset marking
+            if GL_portion <= 8 and sugar_effective_g <= 10 and portion_multiplier <= 3.0:
+                # These are actually diabetes-friendly despite dataset marking
+                # Let model decide - don't apply harsh avoid_diabetic rules
+                pass  
+                
+            # For truly high-risk foods (high sugar + high GL), be strict
+            elif sugar_effective_g >= 25 and GL_portion >= 15:
+                if portion_multiplier >= 1.0:
+                    risk_level = RiskLevel.UNSAFE
+                    reasons.append(f"High-risk 'avoid for diabetic' food: high sugar ({sugar_effective_g:.1f}g) + GL ({GL_portion:.1f})")
+                else:
+                    risk_level = RiskLevel.CAUTION
+                    reasons.append(f"High-risk 'avoid for diabetic' food, small portion ({portion_multiplier:.1f}×)")
+            
+            # For moderate-risk foods (marked avoid but low-moderate GL), be more lenient
+            elif GL_portion <= 15 and sugar_effective_g <= 20:
+                if portion_multiplier >= 4.0:  # Much higher threshold for low-GL foods
+                    risk_level = RiskLevel.UNSAFE
+                    reasons.append(f"Excessive portion ({portion_multiplier:.1f}×) of 'avoid for diabetic' food")
+                elif portion_multiplier >= 3.0:  # Changed from 2.5 to 3.0
+                    risk_level = RiskLevel.CAUTION
+                    reasons.append(f"Large portion ({portion_multiplier:.1f}×) of 'avoid for diabetic' food")
+                # Otherwise, let model decide for healthy foods
+                
+            # For medium-risk foods
             else:
-                risk_level = RiskLevel.CAUTION
-                reasons.append(f"'Avoid for diabetic' food, small portion ({portion_multiplier:.1f}×)")
+                if portion_multiplier >= 2.0:
+                    risk_level = RiskLevel.UNSAFE
+                    reasons.append(f"'Avoid for diabetic' food with moderate risk at large portion ({portion_multiplier:.1f}×)")
+                elif portion_multiplier >= 1.5:
+                    risk_level = RiskLevel.CAUTION
+                    reasons.append(f"'Avoid for diabetic' food at elevated portion ({portion_multiplier:.1f}×)")
         
-        # Rule 2: Portion sanity check (updated threshold)
-        if portion_multiplier >= 3.0:
+        # Rule 2: Extreme portion sanity check (updated thresholds)
+        if portion_multiplier >= 5.0:  # Increased from 3.0 for truly extreme cases
             risk_level = RiskLevel.UNSAFE
-            reasons.append(f"Extreme portion size ({portion_multiplier:.1f}× ≥3.0)")
+            reasons.append(f"Extreme portion size ({portion_multiplier:.1f}× ≥5.0)")
+        elif portion_multiplier >= 3.0:  # New tier for very large portions
+            # Only flag as unsafe if food has concerning nutritional profile
+            if GL_portion >= 15 or sugar_effective_g >= 20:
+                risk_level = RiskLevel.UNSAFE
+                reasons.append(f"Very large portion ({portion_multiplier:.1f}×) with high GL/sugar")
+            elif risk_level != RiskLevel.UNSAFE:
+                risk_level = RiskLevel.CAUTION
+                reasons.append(f"Very large portion size ({portion_multiplier:.1f}×, 3.0-4.9 range)")
         elif portion_multiplier >= 2.0:
-            if risk_level != RiskLevel.UNSAFE:
-                risk_level = RiskLevel.CAUTION  
-            reasons.append(f"Large portion size ({portion_multiplier:.1f}×, 2.0-2.9 range)")
+            # Only flag healthy foods as caution, not unsafe
+            if risk_level != RiskLevel.UNSAFE and (GL_portion >= 12 or sugar_effective_g >= 15):
+                risk_level = RiskLevel.CAUTION
+                reasons.append(f"Large portion ({portion_multiplier:.1f}×) with moderate GL/sugar")
         
-        # Rule 3: Sugar load per meal (conservative thresholds)
-        if sugar_effective_g >= 35:  # Conservative UNSAFE threshold
+        # Rule 3: Sugar load per meal (updated for medical accuracy)
+        if sugar_effective_g >= 40:  # More lenient for healthy foods
             risk_level = RiskLevel.UNSAFE
-            reasons.append(f"Very high sugar load ({sugar_effective_g:.1f}g ≥35g)")
-        elif sugar_effective_g >= 25:  # CAUTION threshold  
+            reasons.append(f"Very high sugar load ({sugar_effective_g:.1f}g ≥40g)")
+        elif sugar_effective_g >= 30:  # Adjusted CAUTION threshold
             if risk_level != RiskLevel.UNSAFE:
                 risk_level = RiskLevel.CAUTION
-            reasons.append(f"High sugar load ({sugar_effective_g:.1f}g, 25-34g range)")
+            reasons.append(f"High sugar load ({sugar_effective_g:.1f}g, 30-39g range)")
         
-        # Rule 4: Glycemic Load thresholds (per portion)
-        if GL_portion >= 20:
+        # Rule 4: Glycemic Load thresholds (per portion) - more lenient for healthy foods
+        if GL_portion >= 25:  # Increased from 20 for very high GL foods
             risk_level = RiskLevel.UNSAFE
-            reasons.append(f"Very high glycemic load ({GL_portion:.1f} ≥20)")
-        elif GL_portion >= 11:
+            reasons.append(f"Very high glycemic load ({GL_portion:.1f} ≥25)")
+        elif GL_portion >= 15:  # Increased from 11 for moderate GL
             if risk_level != RiskLevel.UNSAFE:
                 risk_level = RiskLevel.CAUTION
-            reasons.append(f"Moderate glycemic load ({GL_portion:.1f}, 11-19 range)")
+            reasons.append(f"High glycemic load ({GL_portion:.1f}, 15-24 range)")
         
-        # Rule 5: Portion multiplier thresholds
-        if portion_multiplier >= 3.0:
-            risk_level = RiskLevel.UNSAFE
-            reasons.append(f"Extreme portion size ({portion_multiplier:.1f}× ≥3.0)")
-        elif portion_multiplier >= 2.0:
-            if risk_level != RiskLevel.UNSAFE:
-                risk_level = RiskLevel.CAUTION
-            reasons.append(f"Large portion size ({portion_multiplier:.1f}×, 2.0-2.9 range)")
-        
-        # Rule 6: Extreme calories (conservative)
+        # Rule 5: Calorie density check (unchanged)
         if calories_effective_kcal >= 800:
             risk_level = RiskLevel.UNSAFE
-            reasons.append(f"Extremely high calories ({calories_effective_kcal:.0f} kcal ≥800)")
+            reasons.append(f"Very high calorie meal ({calories_effective_kcal:.0f} ≥800 kcal)")
         elif calories_effective_kcal >= 700:
             if risk_level != RiskLevel.UNSAFE:
                 risk_level = RiskLevel.CAUTION
-            reasons.append(f"High calorie load ({calories_effective_kcal:.0f} kcal, 700-799 range)")
+            reasons.append(f"High calorie meal ({calories_effective_kcal:.0f}, 700-799 kcal)")
         
         return risk_level, reasons
     
