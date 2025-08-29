@@ -1,6 +1,14 @@
 # --- Firestore Backend Logging ---
-from firebase_admin_setup import db as firestore_db, firebase_initialized
-from firebase_admin import firestore
+try:
+    from firebase_admin_setup import db as firestore_db, firebase_initialized
+    from firebase_admin import firestore
+    FIREBASE_AVAILABLE = True
+except ImportError:
+    print("⚠️ Firebase not available - running without cloud logging")
+    firestore_db = None
+    firebase_initialized = False
+    FIREBASE_AVAILABLE = False
+
 from pydantic import BaseModel
 from improved_model_system import MealSafetyPredictor, RiskLevel, run_acceptance_tests
 
@@ -90,7 +98,7 @@ MODEL_DIR = BASE_DIR / "models"
 # Endpoint to log each meal in the list to Firestore
 @app.post("/log-meal-firestore")
 async def log_meal_to_firestore(log: MealLog):
-    if not firebase_initialized or not firestore_db:
+    if not FIREBASE_AVAILABLE or not firebase_initialized or not firestore_db:
         raise HTTPException(status_code=503, detail="Firebase/Firestore not available")
     
     try:
@@ -122,7 +130,8 @@ async def log_meal_to_firestore(log: MealLog):
                 "prediction": prediction.dict(),
                 "createdAt": firestore.SERVER_TIMESTAMP if not log.createdAt else log.createdAt
             }
-            doc_ref = firestore_db.collection("logs").add(log_entry)
+            if FIREBASE_AVAILABLE and firestore_db:
+                doc_ref = firestore_db.collection("logs").add(log_entry)
             results.append({"doc_id": doc_ref[1].id, "meal": meal.meal_name, "risk": prediction.risk_level})
         # Calculate overall risk for the meal event
         risk_levels = [r["risk"] for r in results]
@@ -142,7 +151,8 @@ async def log_meal_to_firestore(log: MealLog):
             "individual_risks": risk_levels,
             "createdAt": firestore.SERVER_TIMESTAMP if not log.createdAt else log.createdAt
         }
-        firestore_db.collection("logs_summary").add(summary_entry)
+        if FIREBASE_AVAILABLE and firestore_db:
+            firestore_db.collection("logs_summary").add(summary_entry)
 
         return {"success": True, "results": results, "overall_risk": overall_risk}
     except Exception as e:
@@ -168,25 +178,12 @@ meal_safety_predictor = None
 def load_model_artifacts():
     global model, scaler, feature_columns, meal_safety_predictor
     try:
-        # Load traditional model artifacts (for backward compatibility)
-        if os.path.exists(MODEL_DIR / "diabetes_model.joblib"):
-            model = joblib.load(MODEL_DIR / "diabetes_model.joblib")
-            scaler = joblib.load(MODEL_DIR / "scaler.joblib") if os.path.exists(MODEL_DIR / "scaler.joblib") else None
-            feature_columns = joblib.load(MODEL_DIR / "feature_columns.joblib") if os.path.exists(MODEL_DIR / "feature_columns.joblib") else None
-            print("✅ Traditional model artifacts loaded")
-        
-        # Initialize improved prediction system
+        # Initialize improved prediction system with medical model
         meal_safety_predictor = MealSafetyPredictor()
         meal_safety_predictor.load_food_dataset(DATA_DIR / "Food_Master_Dataset_.csv")
+        meal_safety_predictor.load_model(MODEL_DIR)  # This will load the medical model
         
-        # If we have trained model, attach it to the predictor
-        if model is not None:
-            meal_safety_predictor.model = model
-            meal_safety_predictor.scaler = scaler
-            meal_safety_predictor.is_trained = True
-            print("✅ Improved prediction system initialized with existing model")
-        else:
-            print("⚠️ No trained model found - using guardrails-only mode")
+        print("✅ Medical prediction system initialized")
         
         return True
         

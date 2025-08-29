@@ -114,20 +114,30 @@ class MealSafetyPredictor:
             
             model_path = Path(model_dir)
             
-            # Try improved model first, fallback to old naming
+            # Try medical model first (new balanced model), then improved, then fallback
             try:
-                self.model = joblib.load(model_path / "improved_diabetes_model.joblib")
-                self.scaler = joblib.load(model_path / "improved_scaler.joblib")
-                self.feature_names = joblib.load(model_path / "improved_feature_names.joblib")
-                try:
-                    self.optimal_threshold = joblib.load(model_path / "optimal_threshold.joblib")
-                except:
-                    self.optimal_threshold = 0.5
-                print(f"✅ Loaded improved model from {model_path}")
+                self.model = joblib.load(model_path / "medical_diabetes_model.joblib")
+                self.scaler = joblib.load(model_path / "medical_scaler.joblib")
+                self.feature_names = joblib.load(model_path / "medical_feature_names.joblib")
+                self.medical_labels = joblib.load(model_path / "medical_labels.joblib")
+                self.optimal_threshold = 0.5  # Balanced model uses standard threshold
+                print(f"✅ Loaded medical model from {model_path}")
             except:
-                # Fallback to legacy naming
-                self.model = joblib.load(model_path / "diabetes_model.joblib")
-                self.scaler = joblib.load(model_path / "scaler.joblib")
+                try:
+                    # Fallback to improved model
+                    self.model = joblib.load(model_path / "improved_diabetes_model.joblib")
+                    self.scaler = joblib.load(model_path / "improved_scaler.joblib")
+                    self.feature_names = joblib.load(model_path / "improved_feature_names.joblib")
+                    self.medical_labels = None
+                    try:
+                        self.optimal_threshold = joblib.load(model_path / "optimal_threshold.joblib")
+                    except:
+                        self.optimal_threshold = 0.5
+                    print(f"✅ Loaded improved model from {model_path}")
+                except:
+                    # Legacy naming
+                    self.model = joblib.load(model_path / "diabetes_model.joblib")
+                    self.scaler = joblib.load(model_path / "scaler.joblib")
                 self.feature_names = joblib.load(model_path / "feature_columns.joblib")
                 self.optimal_threshold = 0.5
                 print(f"✅ Loaded legacy model from {model_path}")
