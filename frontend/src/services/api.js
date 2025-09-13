@@ -71,6 +71,33 @@ export async function predictDiabetesFriendly(mealData) {
 }
 
 /**
+ * Get personalized meal recommendations using ML model
+ * @param {Object} userProfile - User profile data
+ * @returns {Promise<Object>} - ML-powered recommendations
+ */
+export async function getPersonalizedRecommendations(userProfile) {
+  try {
+    const response = await fetch(`${API_BASE_URL}/recommendations`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify(userProfile),
+    });
+
+    if (!response.ok) {
+      const errorData = await response.json();
+      throw new Error(`Recommendation error: ${errorData.detail || "Unknown error"}`);
+    }
+
+    return await response.json();
+  } catch (error) {
+    console.error("Recommendation request failed:", error);
+    throw error;
+  }
+}
+
+/**
  * Check if the API is healthy and models are loaded
  * @returns {Promise<Object>} - Health status
  */

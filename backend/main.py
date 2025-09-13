@@ -591,6 +591,227 @@ async def predict_sample():
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Sample prediction error: {str(e)}")
 
+class PersonalizedRecommendationRequest(BaseModel):
+    age: int
+    gender: str
+    weight_kg: float
+    height_cm: float
+    fasting_sugar: int
+    post_meal_sugar: int
+    diabetes_type: str
+    time_of_day: str = "Lunch"
+    meal_preferences: Optional[List[str]] = None
+    count: int = 6
+
+@app.post("/recommendations")
+async def get_personalized_recommendations(request: PersonalizedRecommendationRequest):
+    """
+    Generate truly personalized meal recommendations using ML model.
+    """
+    if meal_safety_predictor is None:
+        raise HTTPException(status_code=503, detail="Prediction system not initialized")
+    
+    try:
+        # Calculate BMI for context
+        bmi = calculate_bmi(request.weight_kg, request.height_cm)
+        
+        # Create user context
+        user_data = {
+            'age': request.age,
+            'gender': request.gender,
+            'bmi': bmi,
+            'fasting_sugar': request.fasting_sugar,
+            'post_meal_sugar': request.post_meal_sugar,
+            'time_of_day': request.time_of_day,
+            'diabetes_type': request.diabetes_type
+        }
+        
+        # Get all available foods
+        if not hasattr(meal_safety_predictor, 'food_df') or meal_safety_predictor.food_df is None:
+            raise HTTPException(status_code=503, detail="Food dataset not loaded")
+        
+        all_foods = list(meal_safety_predictor.food_df.index)
+        
+        # Filter foods based on time of day and preferences
+        time_filters = {
+            'Breakfast': ['idli', 'dosa', 'poha', 'upma', 'oats', 'daliya', 'paratha'],
+            'Lunch': ['dal', 'rice', 'roti', 'sabzi', 'curry', 'pulao', 'khichdi'],
+            'Dinner': ['soup', 'dal', 'roti', 'sabzi', 'curry', 'vegetable'],
+            'Snack': ['fruit', 'nuts', 'tea', 'milk', 'sprouts', 'chaat']
+        }
+        
+        relevant_keywords = time_filters.get(request.time_of_day, time_filters['Lunch'])
+        
+        # Find foods matching time of day
+        candidate_foods = []
+        for food in all_foods:
+            food_lower = food.lower()
+            if any(keyword in food_lower for keyword in relevant_keywords):
+                candidate_foods.append(food)
+        
+        # If no specific matches, use all foods
+        if len(candidate_foods) < request.count:
+            candidate_foods = all_foods
+        
+        # Test each food with ML model and rank by safety
+        food_scores = []
+        
+        for food in candidate_foods[:50]:  # Test up to 50 foods for performance
+            try:
+                # Use standard portion size for comparison
+                standard_portion = 200  # 200g standard
+                
+                prediction = meal_safety_predictor.predict_meal_safety(
+                    food, standard_portion, user_data
+                )
+                
+                # Calculate safety score (higher = safer)
+                risk_scores = {'safe': 1.0, 'caution': 0.6, 'unsafe': 0.1}
+                safety_score = risk_scores.get(prediction['risk_level'], 0.5)
+                confidence = prediction['confidence']
+                
+                # Combined score weighted by confidence
+                final_score = safety_score * confidence
+                
+                food_scores.append({
+                    'food_name': food,
+                    'safety_score': final_score,
+                    'risk_level': prediction['risk_level'],
+                    'confidence': confidence,
+                    'explanation': prediction['explanation'],
+                    'portion_features': prediction.get('portion_features', {}),
+                    'reasons': prediction.get('reasons', [])
+                })
+                
+            except Exception as e:
+                # Skip foods that cause errors
+                continue
+        
+        # Sort by safety score (highest first) and select top recommendations
+        food_scores.sort(key=lambda x: x['safety_score'], reverse=True)
+        top_recommendations = food_scores[:request.count]
+        
+        # Generate dynamic reasons for each recommendation
+        recommendations = []
+        for food_rec in top_recommendations:
+            food_row = meal_safety_predictor.food_df.loc[food_rec['food_name']]
+            
+            # Generate intelligent, food-specific reasons
+            dynamic_reasons = generate_intelligent_reasons(
+                food_rec['food_name'], 
+                food_row, 
+                food_rec['portion_features'],
+                user_data,
+                food_rec['risk_level']
+            )
+            
+            recommendations.append({
+                'name': food_rec['food_name'],
+                'risk_level': food_rec['risk_level'],
+                'confidence': food_rec['confidence'],
+                'safety_score': food_rec['safety_score'],
+                'calories': round(food_row.get('Calorie', 0) * 200 / 100),  # 200g portion from per 100g data
+                'carbs': round(food_row.get('Carbohydrate (g)', 0) * 200 / 100, 1),
+                'protein': round(food_row.get('Protein (g)', 0) * 200 / 100, 1),
+                'fat': round(food_row.get('Total Fat (g)', 0) * 200 / 100, 1),
+                'fiber': round(food_row.get('Dietary Fiber (g)', 0) * 200 / 100, 1),
+                'glycemicIndex': food_row.get('GI', 50),
+                'portionSize': "200g (1 serving)",
+                'timeOfDay': request.time_of_day,
+                'reasons': dynamic_reasons,
+                'explanation': food_rec['explanation']
+            })
+        
+        return {
+            'recommendations': recommendations,
+            'user_profile': {
+                'bmi': bmi,
+                'risk_profile': 'high' if bmi > 30 or request.fasting_sugar > 125 else 'moderate' if bmi > 25 or request.fasting_sugar > 100 else 'low'
+            },
+            'personalization_factors': [
+                f"Age: {request.age} years",
+                f"BMI: {bmi:.1f}",
+                f"Fasting glucose: {request.fasting_sugar} mg/dL",
+                f"Meal time: {request.time_of_day}"
+            ]
+        }
+        
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Recommendation error: {str(e)}")
+
+def generate_intelligent_reasons(food_name: str, food_row: pd.Series, portion_features: Dict, 
+                                user_data: Dict, risk_level: str) -> List[str]:
+    """Generate intelligent, food-specific reasons for recommendations."""
+    reasons = []
+    
+    # Get nutritional data
+    calories = food_row.get('Calorie', 0)
+    carbs = food_row.get('Carbohydrate (g)', 0)
+    protein = food_row.get('Protein (g)', 0)
+    fiber = food_row.get('Dietary Fiber (g)', 0)
+    gi = food_row.get('GI', 50)
+    fat = food_row.get('Total Fat (g)', 0)
+    
+    food_lower = food_name.lower()
+    
+    # Food category specific reasons
+    if any(veg in food_lower for veg in ['vegetable', 'sabzi', 'bhindi', 'spinach', 'methi', 'cauliflower']):
+        reasons.append(f"Rich in fiber ({fiber:.1f}g) - helps slow glucose absorption")
+        if gi < 55:
+            reasons.append(f"Low glycemic index ({gi}) prevents blood sugar spikes")
+            
+    elif any(dal in food_lower for dal in ['dal', 'lentil', 'arhar', 'moong', 'chana']):
+        reasons.append(f"High protein ({protein:.1f}g) promotes satiety and stable blood sugar")
+        reasons.append("Recommended by diabetologists - 1-2 servings daily")
+        
+    elif any(grain in food_lower for grain in ['rice', 'roti', 'wheat', 'bread']):
+        if gi > 70:
+            reasons.append(f"High GI ({gi}) - recommend pairing with vegetables and protein")
+        else:
+            reasons.append(f"Moderate GI ({gi}) - good carbohydrate choice when portion-controlled")
+            
+    elif any(fruit in food_lower for fruit in ['apple', 'orange', 'banana', 'fruit']):
+        reasons.append(f"Natural fruit sugars with fiber ({fiber:.1f}g) for better glycemic control")
+        
+    # BMI-specific reasons
+    user_bmi = user_data.get('bmi', 25)
+    if user_bmi > 25 and calories < 100:
+        reasons.append(f"Low calorie ({calories:.0f} kcal) - supports weight management")
+    elif user_bmi > 25 and calories > 200:
+        reasons.append(f"Higher calorie content - consider smaller portions for weight goals")
+        
+    # Blood sugar specific reasons
+    fasting_sugar = user_data.get('fasting_sugar', 100)
+    if fasting_sugar > 125:  # High fasting glucose
+        if carbs < 15:
+            reasons.append("Low carbohydrate content ideal for glucose control")
+        elif carbs > 30:
+            reasons.append("Higher carbs - monitor blood sugar 2 hours post-meal")
+            
+    # Age-specific recommendations
+    age = user_data.get('age', 35)
+    if age > 50 and protein > 8:
+        reasons.append(f"High protein ({protein:.1f}g) supports muscle health in mature adults")
+        
+    # Risk level specific reasons
+    if risk_level == 'safe':
+        reasons.append("Multiple safety factors align with your health profile")
+    elif risk_level == 'caution':
+        reasons.append("Acceptable with portion control and monitoring")
+        
+    # Time of day reasons
+    time_of_day = user_data.get('time_of_day', 'Lunch')
+    if time_of_day == 'Breakfast' and carbs > 20:
+        reasons.append("Good morning carbs provide sustained energy")
+    elif time_of_day == 'Dinner' and carbs < 20:
+        reasons.append("Light carbs ideal for evening meal")
+        
+    # Default fallback
+    if not reasons:
+        reasons.append("Nutritionally balanced option for diabetic diet")
+        
+    return reasons[:3]  # Limit to 3 most relevant reasons
+
 if __name__ == "__main__":
     import uvicorn
     uvicorn.run(app, host="0.0.0.0", port=8000)
