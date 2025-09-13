@@ -7,7 +7,9 @@ import {
   ExclamationTriangleIcon,
   CheckCircleIcon,
   SparklesIcon,
-  ArrowPathIcon
+  ArrowPathIcon,
+  ChevronUpIcon,
+  ChevronDownIcon
 } from '@heroicons/react/24/outline';
 import SafeMealSuggestions from '../components/SafeMealSuggestions';
 import BloodSugarLineChart from '../components/LineChart';
@@ -23,6 +25,7 @@ const Dashboard = () => {
   const [loading, setLoading] = useState(true);
   const [recentLogs, setRecentLogs] = useState([]);
   const [error, setError] = useState(null);
+  const [showAllLogs, setShowAllLogs] = useState(false);
 
   // Fetch logs from Firebase
   const fetchLogs = async () => {
@@ -275,62 +278,83 @@ const Dashboard = () => {
                 <div className="p-4 rounded-lg border-2 border-neutral-300 dark:border-neutral-700 bg-neutral-100 dark:bg-neutral-900 text-center text-neutral-500 dark:text-neutral-400">
                   No meal logs found. Log a meal to see your recent entries here.
                 </div>
-              ) : recentLogs.map((log) => {
-                // Extract meal info (support array or single)
-                const mealName = Array.isArray(log.meals_taken) && log.meals_taken.length > 0 ? log.meals_taken[0].meal : (log.meal || '');
-                const fasting = log.sugar_level_fasting || log.fastingSugar || '';
-                const postMeal = log.sugar_level_post || log.postMealSugar || '';
-                const createdAt = log.createdAt?.toDate?.() ? log.createdAt.toDate().toLocaleDateString() : '';
-                const time = Array.isArray(log.meals_taken) && log.meals_taken.length > 0 ? log.meals_taken[0].time_of_day : (log.time_of_day || '');
-                const risk = log.riskLevel || log.prediction?.risk_level || log.prediction?.risk || (log.prediction?.recommendations && log.prediction.recommendations[0]?.risk_level) || '';
-                return (
-                  <div
-                    key={log.id}
-                    className={`
-                      p-4 rounded-lg border-2 transition-colors duration-200
-                      ${risk === 'high' 
-                        ? 'border-danger-600 bg-danger-700 text-white' 
-                        : risk === 'medium'
-                        ? 'border-warning-200 bg-warning-50 dark:border-warning-700 dark:bg-warning-900/20'
-                        : 'border-success-200 bg-success-50 dark:border-success-700 dark:bg-success-900/20'
-                      }
-                    `}
-                  >
-                    <div className="flex items-center justify-between">
-                      <div className="flex items-center space-x-4">
-                        {risk !== 'high' && (
-                          <div className={`
-                            p-2 rounded-full
-                            ${risk === 'medium' ? 'bg-warning-200 dark:bg-warning-800' : 'bg-success-200 dark:bg-success-800'}
-                          `}>
-                            {risk === 'medium' ? (
-                              <ExclamationTriangleIcon className="h-5 w-5 text-warning-600 dark:text-warning-400" />
-                            ) : (
-                              <CheckCircleIcon className="h-5 w-5 text-success-600 dark:text-success-400" />
+              ) : (
+                <>
+                  {(showAllLogs ? recentLogs : recentLogs.slice(0, 5)).map((log) => {
+                    // Extract meal info (support array or single)
+                    const mealName = Array.isArray(log.meals_taken) && log.meals_taken.length > 0 ? log.meals_taken[0].meal : (log.meal || '');
+                    const fasting = log.sugar_level_fasting || log.fastingSugar || '';
+                    const postMeal = log.sugar_level_post || log.postMealSugar || '';
+                    const createdAt = log.createdAt?.toDate?.() ? log.createdAt.toDate().toLocaleDateString() : '';
+                    const time = Array.isArray(log.meals_taken) && log.meals_taken.length > 0 ? log.meals_taken[0].time_of_day : (log.time_of_day || '');
+                    const risk = log.riskLevel || log.prediction?.risk_level || log.prediction?.risk || (log.prediction?.recommendations && log.prediction.recommendations[0]?.risk_level) || '';
+                    return (
+                      <div
+                        key={log.id}
+                        className={`
+                          p-4 rounded-lg border-2 transition-colors duration-200
+                          ${risk === 'high' 
+                            ? 'border-danger-600 bg-danger-700 text-white' 
+                            : risk === 'medium'
+                            ? 'border-warning-200 bg-warning-50 dark:border-warning-700 dark:bg-warning-900/20'
+                            : 'border-success-200 bg-success-50 dark:border-success-700 dark:bg-success-900/20'
+                          }
+                        `}
+                      >
+                        <div className="flex items-center justify-between">
+                          <div className="flex items-center space-x-4">
+                            {risk !== 'high' && (
+                              <div className={`
+                                p-2 rounded-full
+                                ${risk === 'medium' ? 'bg-warning-200 dark:bg-warning-800' : 'bg-success-200 dark:bg-success-800'}
+                              `}>
+                                {risk === 'medium' ? (
+                                  <ExclamationTriangleIcon className="h-5 w-5 text-warning-600 dark:text-warning-400" />
+                                ) : (
+                                  <CheckCircleIcon className="h-5 w-5 text-success-600 dark:text-success-400" />
+                                )}
+                              </div>
                             )}
+                            <div>
+                              <h3 className={`font-semibold ${risk === 'high' ? 'text-white' : 'text-gray-900 dark:text-white'}`}>{mealName || '-'}</h3>
+                              <p className={`text-sm ${risk === 'high' ? 'text-white' : 'text-gray-600 dark:text-gray-400'}`}>{createdAt} {time ? `• ${time}` : ''}</p>
+                            </div>
                           </div>
-                        )}
-                        <div>
-                          <h3 className={`font-semibold ${risk === 'high' ? 'text-white' : 'text-gray-900 dark:text-white'}`}>{mealName || '-'}</h3>
-                          <p className={`text-sm ${risk === 'high' ? 'text-white' : 'text-gray-600 dark:text-gray-400'}`}>{createdAt} {time ? `• ${time}` : ''}</p>
+                          <div className="text-right">
+                            <div className="flex space-x-4 text-sm">
+                              <div>
+                                <p className={`text-gray-600 dark:text-gray-400 ${risk === 'high' ? 'text-white' : ''}`}>Fasting</p>
+                                <p className={`font-semibold ${risk === 'high' ? 'text-white' : 'text-gray-900 dark:text-white'}`}>{fasting ? `${fasting} mg/dL` : '-'}</p>
+                              </div>
+                              <div>
+                                <p className={`text-gray-600 dark:text-gray-400 ${risk === 'high' ? 'text-white' : ''}`}>Post-Meal</p>
+                                <p className={`font-semibold ${risk === 'high' ? 'text-white' : 'text-gray-900 dark:text-white'}`}>{postMeal ? `${postMeal} mg/dL` : '-'}</p>
+                              </div>
+                            </div>
+                          </div>
                         </div>
                       </div>
-                      <div className="text-right">
-                        <div className="flex space-x-4 text-sm">
-                          <div>
-                            <p className={`text-gray-600 dark:text-gray-400 ${risk === 'high' ? 'text-white' : ''}`}>Fasting</p>
-                            <p className={`font-semibold ${risk === 'high' ? 'text-white' : 'text-gray-900 dark:text-white'}`}>{fasting ? `${fasting} mg/dL` : '-'}</p>
-                          </div>
-                          <div>
-                            <p className={`text-gray-600 dark:text-gray-400 ${risk === 'high' ? 'text-white' : ''}`}>Post-Meal</p>
-                            <p className={`font-semibold ${risk === 'high' ? 'text-white' : 'text-gray-900 dark:text-white'}`}>{postMeal ? `${postMeal} mg/dL` : '-'}</p>
-                          </div>
-                        </div>
-                      </div>
-                    </div>
-                  </div>
-                );
-              })}
+                    );
+                  })}
+                  
+                  {/* Show/Hide button for additional logs */}
+                  {recentLogs.length > 5 && (
+                    <button
+                      onClick={() => setShowAllLogs(!showAllLogs)}
+                      className="w-full mt-4 px-4 py-2 text-sm font-medium text-primary-600 dark:text-primary-400 hover:text-primary-700 dark:hover:text-primary-300 bg-primary-50 dark:bg-primary-900/20 hover:bg-primary-100 dark:hover:bg-primary-900/30 rounded-lg transition-colors duration-200 flex items-center justify-center space-x-2"
+                    >
+                      <span>
+                        {showAllLogs ? 'Show Less' : `Show ${recentLogs.length - 5} More`}
+                      </span>
+                      {showAllLogs ? (
+                        <ChevronUpIcon className="h-4 w-4" />
+                      ) : (
+                        <ChevronDownIcon className="h-4 w-4" />
+                      )}
+                    </button>
+                  )}
+                </>
+              )}
             </div>
           </div>
 
