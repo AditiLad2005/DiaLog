@@ -1,4 +1,4 @@
-const API_BASE_URL = "http://localhost:8000";
+const API_BASE_URL = "http://localhost:8002";
 
 /**
  * Fetch all available foods from the database
@@ -94,6 +94,34 @@ export async function getPersonalizedRecommendations(userProfile) {
   } catch (error) {
     console.error("Recommendation request failed:", error);
     throw error;
+  }
+}
+
+/**
+ * Get truly personalized meal recommendations using individual user ML models
+ * @param {Object} userProfile - User profile data with user_id
+ * @returns {Promise<Object>} - Personalized ML recommendations based on user logs
+ */
+export async function getTrulyPersonalizedRecommendations(userProfile) {
+  try {
+    const response = await fetch(`${API_BASE_URL}/truly-personalized-recommendations`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify(userProfile),
+    });
+
+    if (!response.ok) {
+      const errorData = await response.json();
+      throw new Error(`Personalized recommendation error: ${errorData.detail || "Unknown error"}`);
+    }
+
+    return await response.json();
+  } catch (error) {
+    console.error("Personalized recommendation request failed:", error);
+    // Fallback to general recommendations
+    return await getPersonalizedRecommendations(userProfile);
   }
 }
 
