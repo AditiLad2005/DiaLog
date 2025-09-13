@@ -105,6 +105,34 @@ const HealthPlanModal = ({ meal, isOpen, onClose, riskLevel = 'low' }) => {
           "Blood sugar may spike later (2-3 hours) due to fat content",
           "Watch for digestive discomfort or acid reflux"
         ];
+      } else {
+        // Fallback for other high-risk foods
+        recommendations.immediate = [
+          "URGENT: Take a 20-minute brisk walk immediately",
+          "Drink 2-3 glasses of water to help dilute blood sugar",
+          "Check blood sugar in 1 hour - expect significant spike",
+          "Practice deep breathing - stress worsens glucose levels",
+          "Avoid any additional food for next 3-4 hours"
+        ];
+        recommendations.shortTerm = [
+          "Take prescribed diabetes medication if recommended",
+          "Avoid strenuous exercise for 2 hours",
+          "Monitor for warning symptoms: thirst, fatigue, dizziness",
+          "Plan light, protein-rich meal for next eating time",
+          "Stay extra hydrated throughout the day"
+        ];
+        recommendations.longTerm = [
+          "CRITICAL: Discuss this food choice with your healthcare provider",
+          "Learn about portion control and meal timing strategies",
+          "Consider working with a diabetes educator",
+          "Track patterns and identify your personal trigger foods",
+          "Work on stress management to improve glucose response"
+        ];
+        recommendations.monitoring = [
+          "Check blood sugar every hour for next 4 hours",
+          "Watch for emergency symptoms: confusion, rapid heartbeat",
+          "Log how this food affects your overall daily control"
+        ];
       }
     }
     
@@ -178,6 +206,33 @@ const HealthPlanModal = ({ meal, isOpen, onClose, riskLevel = 'low' }) => {
         recommendations.monitoring = [
           "Blood sugar may be delayed - check in 2-3 hours",
           "Note any digestive effects for future reference"
+        ];
+      } else {
+        // Fallback for other medium-risk foods
+        recommendations.immediate = [
+          "Take a 10-15 minute walk to help glucose management",
+          "Drink water and stay well hydrated",
+          "Relax for 30 minutes - avoid stressful activities",
+          "Monitor how you feel in the next hour"
+        ];
+        recommendations.shortTerm = [
+          "Light exercise after 1-2 hours is beneficial",
+          "Choose balanced snacks if needed later",
+          "Track how this food affects your energy levels",
+          "Plan vegetables with your next meal",
+          "Ensure good sleep tonight for glucose recovery"
+        ];
+        recommendations.longTerm = [
+          "Consider smaller portions of this food type",
+          "Learn to pair with low-glycemic vegetables",
+          "Track patterns with similar foods",
+          "Work on improving insulin sensitivity through exercise",
+          "Build a collection of safer food alternatives"
+        ];
+        recommendations.monitoring = [
+          "Check blood sugar in 1.5-2 hours (expect moderate elevation)",
+          "Note energy patterns and hunger levels",
+          "Track how this compares to your usual foods"
         ];
       }
     }
