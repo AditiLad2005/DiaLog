@@ -16,6 +16,7 @@ const SafeMealSuggestions = ({ userProfile = {}, currentMeal = null, className =
   const [selectedCategory, setSelectedCategory] = useState('all');
   const [availableMeals, setAvailableMeals] = useState([]);
   const [usedMeals, setUsedMeals] = useState(new Set());
+  const [isVegOnly, setIsVegOnly] = useState(false); // New state for veg/non-veg filter
 
   // Categories for meal recommendations
   const categories = [
@@ -25,6 +26,20 @@ const SafeMealSuggestions = ({ userProfile = {}, currentMeal = null, className =
     { id: 'dinner', name: 'Dinner', icon: CheckCircleIcon },
     { id: 'snacks', name: 'Snacks', icon: CheckCircleIcon }
   ];
+
+  // Function to determine if a meal is vegetarian
+  const isVegetarian = (mealName) => {
+    const name = mealName.toLowerCase();
+    const nonVegKeywords = [
+      'chicken', 'mutton', 'fish', 'egg', 'meat', 'prawn', 'shrimp', 'crab',
+      'lamb', 'beef', 'pork', 'turkey', 'duck', 'seafood', 'salmon', 'tuna',
+      'bacon', 'ham', 'sausage', 'biryani chicken', 'chicken curry', 'fish curry',
+      'egg curry', 'omelet', 'omelette', 'scrambled egg', 'boiled egg'
+    ];
+    
+    // Check if any non-veg keyword is present in the meal name
+    return !nonVegKeywords.some(keyword => name.includes(keyword));
+  };
 
   // Load meals from dataset
   useEffect(() => {
@@ -83,8 +98,13 @@ const SafeMealSuggestions = ({ userProfile = {}, currentMeal = null, className =
     // Filter meals based on category
     let candidateMeals = [...availableMeals];
     
+    // Apply veg/non-veg filter first
+    if (isVegOnly) {
+      candidateMeals = candidateMeals.filter(meal => isVegetarian(meal));
+    }
+    
     if (category !== 'all') {
-      candidateMeals = availableMeals.filter(meal => {
+      candidateMeals = candidateMeals.filter(meal => {
         const name = meal.toLowerCase();
         switch (category) {
           case 'breakfast':
@@ -189,7 +209,7 @@ const SafeMealSuggestions = ({ userProfile = {}, currentMeal = null, className =
     }
     
     // Transform ML response to match expected format
-    return response.recommendations.map(rec => ({
+    let transformedRecommendations = response.recommendations.map(rec => ({
       name: rec.name,
       calories: rec.calories,
       carbs: rec.carbs,
@@ -209,7 +229,14 @@ const SafeMealSuggestions = ({ userProfile = {}, currentMeal = null, className =
       predicted_blood_sugar: rec.predicted_blood_sugar,
       personalization_info: response.personalization || null  // Store personalization details
     }));
-  }, [userProfile.age, userProfile.gender, userProfile.weight_kg, userProfile.height_cm, userProfile.fasting_sugar, userProfile.post_meal_sugar, userProfile.diabetes_type]);
+
+    // Apply veg/non-veg filter to ML recommendations
+    if (isVegOnly) {
+      transformedRecommendations = transformedRecommendations.filter(rec => isVegetarian(rec.name));
+    }
+
+    return transformedRecommendations;
+  }, [userProfile.age, userProfile.gender, userProfile.weight_kg, userProfile.height_cm, userProfile.fasting_sugar, userProfile.post_meal_sugar, userProfile.diabetes_type, userProfile.user_id, isVegOnly]);
 
   // Consolidated effect for loading recommendations
   // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -235,7 +262,7 @@ const SafeMealSuggestions = ({ userProfile = {}, currentMeal = null, className =
     };
 
     loadRecommendations();
-  }, [availableMeals.length, selectedCategory, userProfile.age, userProfile.weight_kg, userProfile.height_cm, getMLRecommendations]);
+  }, [availableMeals.length, selectedCategory, userProfile.age, userProfile.weight_kg, userProfile.height_cm, getMLRecommendations, isVegOnly]);
 
   const generateRecommendations = useCallback(async () => {
     if (availableMeals.length === 0 || isLoading) return; // Prevent multiple simultaneous calls
@@ -257,7 +284,7 @@ const SafeMealSuggestions = ({ userProfile = {}, currentMeal = null, className =
     }
     // Add a small delay to prevent rapid flickering
     setTimeout(() => setIsLoading(false), 300);
-  }, [availableMeals.length, isLoading, userProfile.age, userProfile.weight_kg, userProfile.height_cm, selectedCategory, getMLRecommendations]);
+  }, [availableMeals.length, isLoading, userProfile.age, userProfile.weight_kg, userProfile.height_cm, selectedCategory, getMLRecommendations, isVegOnly]);
 
   return (
     <div className={`bg-white dark:bg-gray-800 rounded-xl shadow-soft p-6 ${className}`}>
@@ -285,6 +312,38 @@ const SafeMealSuggestions = ({ userProfile = {}, currentMeal = null, className =
           <ArrowPathIcon className={`h-4 w-4 mr-2 ${isLoading ? 'animate-spin' : ''}`} />
           {isLoading ? 'Generating...' : 'Refresh'}
         </button>
+      </div>
+
+      {/* Veg/Non-Veg Toggle */}
+      <div className="flex items-center justify-between mb-4 p-4 bg-gray-50 dark:bg-gray-700 rounded-lg">
+        <div className="flex items-center space-x-3">
+          <div className="text-sm font-medium text-gray-700 dark:text-gray-300">
+            Food Preference
+          </div>
+          <div className="flex items-center space-x-2">
+            <span className={`text-sm ${!isVegOnly ? 'text-gray-900 dark:text-white font-medium' : 'text-gray-500 dark:text-gray-400'}`}>
+              All Foods
+            </span>
+            <button
+              onClick={() => setIsVegOnly(!isVegOnly)}
+              className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors duration-200 ${
+                isVegOnly ? 'bg-green-600' : 'bg-gray-300 dark:bg-gray-600'
+              }`}
+            >
+              <span
+                className={`inline-block h-4 w-4 transform rounded-full bg-white transition duration-200 ${
+                  isVegOnly ? 'translate-x-6' : 'translate-x-1'
+                }`}
+              />
+            </button>
+            <span className={`text-sm ${isVegOnly ? 'text-green-600 font-medium' : 'text-gray-500 dark:text-gray-400'}`}>
+              Vegetarian Only
+            </span>
+          </div>
+        </div>
+        <div className="text-xs text-gray-500 dark:text-gray-400">
+          {isVegOnly ? '🌱 Showing vegetarian meals only' : '🍽️ Showing all meal types'}
+        </div>
       </div>
 
       {/* Category Filters */}
