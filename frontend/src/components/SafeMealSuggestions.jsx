@@ -343,9 +343,9 @@ const SafeMealSuggestions = ({ userProfile = {}, currentMeal = null, className =
               )}
               {suggestions[0].personalization_info.has_personal_model && (
                 <div className="flex items-center space-x-4 mt-2 text-xs text-green-600 dark:text-green-400">
-                  <span>📊 {suggestions[0].personalization_info.meal_count} meals analyzed</span>
+                  <span>{suggestions[0].personalization_info.meal_count} meals analyzed</span>
                   {suggestions[0].personalization_info.model_score && (
-                    <span>🎯 Model accuracy: {(suggestions[0].personalization_info.model_score * 100).toFixed(0)}%</span>
+                    <span>Model accuracy: {(suggestions[0].personalization_info.model_score * 100).toFixed(0)}%</span>
                   )}
                 </div>
               )}
@@ -411,7 +411,7 @@ const SafeMealSuggestions = ({ userProfile = {}, currentMeal = null, className =
                                 ? 'bg-yellow-100 text-yellow-700' 
                                 : 'bg-red-100 text-red-700'
                           }`}>
-                            📊 {meal.predicted_blood_sugar}mg/dL
+                            {meal.predicted_blood_sugar}mg/dL
                           </span>
                         )}
                       </div>

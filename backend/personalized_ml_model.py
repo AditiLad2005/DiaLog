@@ -349,7 +349,7 @@ class PersonalizedMealRecommender:
         elif food_item in problematic_foods:
             spike_rate = problematic_foods[food_item]['spike_rate']
             meal_count = problematic_foods[food_item]['meal_count']
-            return f"⚠️ {food_item} caused blood sugar spikes in {int(spike_rate*100)}% of your {meal_count} previous meals"
+            return f"WARNING: {food_item} caused blood sugar spikes in {int(spike_rate*100)}% of your {meal_count} previous meals"
         
         # New food for this user
         else:
@@ -357,7 +357,7 @@ class PersonalizedMealRecommender:
             if predicted_bs <= avg_tolerance:
                 return f"Based on your glycemic tolerance pattern, {food_item} should work well for you"
             else:
-                return f"⚠️ {food_item} may exceed your usual tolerance level - monitor closely"
+                return f"CAUTION: {food_item} may exceed your usual tolerance level - monitor closely"
     
     def get_personal_insights(self, user_id):
         """Get personal insights for the user"""
@@ -369,21 +369,21 @@ class PersonalizedMealRecommender:
         
         # Meal count insight
         meal_count = patterns.get('total_meals', 0)
-        insights.append(f"📊 Analyzed {meal_count} of your meal logs")
+        insights.append(f"Analyzed {meal_count} of your meal logs")
         
         # Blood sugar pattern
         avg_bs = patterns.get('avg_blood_sugar', 0)
         if avg_bs > 0:
             if avg_bs < 130:
-                insights.append(f"✅ Your average blood sugar ({avg_bs:.0f}) shows good control")
+                insights.append(f"Your average blood sugar ({avg_bs:.0f}) shows good control")
             else:
-                insights.append(f"⚠️ Your average blood sugar ({avg_bs:.0f}) needs attention")
+                insights.append(f"Your average blood sugar ({avg_bs:.0f}) needs attention")
         
         # Food preferences
         food_prefs = patterns.get('food_preferences', {})
         if food_prefs:
             top_food = max(food_prefs.items(), key=lambda x: x[1])
-            insights.append(f"🍽️ Your most logged food: {top_food[0]} ({top_food[1]} times)")
+            insights.append(f"Your most logged food: {top_food[0]} ({top_food[1]} times)")
         
         # Successful foods
         successful = patterns.get('successful_foods', {})

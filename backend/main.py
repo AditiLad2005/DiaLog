@@ -965,9 +965,9 @@ async def get_truly_personalized_recommendations(request: TrulyPersonalizedReque
                 'model_score': model_status['model_score'],
                 'personal_insights': personal_insights,
                 'personalization_note': (
-                    "🎯 Recommendations based on your personal meal history and glycemic responses" 
+                    "Recommendations based on your personal meal history and glycemic responses" 
                     if model_status['has_personal_model'] 
-                    else "📊 General ML recommendations - log more meals to get personalized insights"
+                    else "General ML recommendations - log more meals to get personalized insights"
                 )
             },
             'user_profile': {
@@ -1007,7 +1007,7 @@ async def get_general_ml_recommendations(request):
         'meal_count': 0,
         'model_score': None,
         'personal_insights': "Log more meals to unlock personalized recommendations!",
-        'personalization_note': "📊 General ML recommendations - personalized model not available"
+        'personalization_note': "General ML recommendations - personalized model not available"
     }
     
     # Update reasons to indicate they're general
