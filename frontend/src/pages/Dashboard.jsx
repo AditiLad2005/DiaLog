@@ -460,7 +460,7 @@ const Dashboard = () => {
                   <PlusIcon className="h-6 w-6 text-primary-600 dark:text-primary-400" />
                   <div>
                     <h3 className="font-medium text-gray-900 dark:text-white">Log New Meal</h3>
-                    <p className="text-sm text-gray-600 dark:text-gray-400">Record your meal and get AI insights</p>
+                    <p className="text-sm text-gray-600 dark:text-gray-400">Record your meal and get health insights</p>
                   </div>
                 </div>
               </Link>
@@ -491,7 +491,7 @@ const Dashboard = () => {
                   <SparklesIcon className="h-6 w-6 text-success-600 dark:text-success-400" />
                   <div className="text-left">
                     <h3 className="font-medium text-gray-900 dark:text-white">Get Meal Recommendations</h3>
-                    <p className="text-sm text-gray-600 dark:text-gray-400">AI-powered food suggestions</p>
+                    <p className="text-sm text-gray-600 dark:text-gray-400">Personalized food suggestions</p>
                   </div>
                 </div>
               </button>
@@ -533,7 +533,7 @@ const Dashboard = () => {
             <div className="mt-6 bg-white/70 dark:bg-gray-800/70 backdrop-blur-sm rounded-2xl p-6 shadow-soft border border-neutral-100 dark:border-neutral-700">
               <h3 className="text-lg font-semibold text-neutral-900 dark:text-white mb-4 flex items-center">
                 <SparklesIcon className="h-5 w-5 mr-2 text-primary-600 dark:text-primary-400" />
-                AI Insights from Model Training
+                Health Insights from Model Training
               </h3>
               <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
                 {insights.insights.map((insight, index) => (
@@ -592,7 +592,7 @@ const Dashboard = () => {
           )}
         </div>
 
-        {/* AI Meal Recommendations */}
+        {/* Smart Meal Recommendations */}
         <div id="meal-recommendations">
           <SafeMealSuggestions className="mb-8" />
         </div>

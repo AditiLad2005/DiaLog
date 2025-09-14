@@ -230,7 +230,7 @@ const MealLog = () => {
             Log Your Meal Data
           </h1>
           <p className="text-lg text-neutral-600 dark:text-neutral-300">
-            Track your blood sugar levels and meal details for AI-powered health insights
+            Track your blood sugar levels and meal details for personalized health insights
           </p>
         </div>
 
@@ -334,7 +334,7 @@ const MealLog = () => {
             {/* Prediction */}
             {prediction && (
               <div className={`border rounded-xl p-6 ${prediction.color}`}>
-                <h3 className="font-semibold mb-2 text-white">AI Health Assessment</h3>
+                <h3 className="font-semibold mb-2 text-white">Health Assessment</h3>
                 <p className="text-sm mb-4 text-white">{prediction.message}</p>
                 <ul className="text-sm list-disc pl-5 text-white">
                   {prediction.recommendations.map((rec, idx) => (
@@ -352,7 +352,7 @@ const MealLog = () => {
               className="w-full flex items-center justify-center px-8 py-4 text-lg font-semibold rounded-xl bg-primary-600 text-white mt-6">
               {isLoading ? (<><ArrowPathIcon className="h-6 w-6 mr-3 animate-spin" /> Analyzing...</>)
                 : prediction === 'success' ? (<><CheckIcon className="h-6 w-6 mr-3" /> Analysis saved successfully</>)
-                : (<><CloudIcon className="h-6 w-6 mr-3" /> Submit to AI Analysis</>)}
+                : (<><CloudIcon className="h-6 w-6 mr-3" /> Submit for Analysis</>)}
             </button>
           </form>
         </div>

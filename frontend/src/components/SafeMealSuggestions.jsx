@@ -299,7 +299,7 @@ const SafeMealSuggestions = ({ userProfile = {}, currentMeal = null, className =
               Smart Meal Recommendations
             </h2>
             <p className="text-sm text-gray-600 dark:text-gray-400">
-              AI-powered suggestions based on your profile and preferences
+              Personalized suggestions based on your profile and preferences
             </p>
           </div>
         </div>
@@ -449,7 +449,7 @@ const SafeMealSuggestions = ({ userProfile = {}, currentMeal = null, className =
                     <div className="flex items-center space-x-2 mb-2">
                       <LightBulbIcon className="h-4 w-4 text-warning-500" />
                       <span className="text-sm font-medium text-gray-700 dark:text-gray-300">
-                        {meal.isPersonalized ? '🎯 Personal Analysis:' : meal.mlPowered ? 'AI Analysis:' : 'Why we recommend this:'}
+                        {meal.isPersonalized ? '🎯 Personal Analysis:' : meal.mlPowered ? 'Smart Analysis:' : 'Why we recommend this:'}
                       </span>
                       <div className="flex space-x-1">
                         {meal.mlPowered && (
@@ -533,7 +533,7 @@ const SafeMealSuggestions = ({ userProfile = {}, currentMeal = null, className =
               How recommendations work
             </h4>
             <p className="text-sm text-blue-700 dark:text-blue-300">
-              Our AI analyzes your personal health profile, previous meal logs, and response patterns to suggest meals 
+              Our system analyzes your personal health profile, previous meal logs, and response patterns to suggest meals 
               that are most likely to keep your blood sugar levels stable. Recommendations improve as you log more meals.
             </p>
           </div>
