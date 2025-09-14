@@ -114,12 +114,12 @@ async def log_meal_to_firestore(log: MealLog):
     try:
         results = []
         for meal in log.meals:
-            # Prepare prediction request for each meal
+            # Prepare prediction request for each meal with default values
             predict_req = MealRequest(
-                age=0,  # If you want to add age, gender, etc., pass from frontend
-                gender="Male",
-                weight_kg=0,
-                height_cm=0,
+                age=35,  # Default age
+                gender="Male",  # Default gender
+                weight_kg=70,  # Default weight in kg
+                height_cm=170,  # Default height in cm
                 fasting_sugar=log.sugar_level_fasting,
                 post_meal_sugar=log.sugar_level_post,
                 meal_taken=meal.meal_name,
@@ -299,6 +299,9 @@ async def get_foods(search: Optional[str] = Query(None, description="Search term
         raise HTTPException(status_code=500, detail=f"Error fetching foods: {str(e)}")
 
 def calculate_bmi(weight_kg: float, height_cm: float) -> float:
+    # Safety check to prevent division by zero
+    if height_cm <= 0 or weight_kg <= 0:
+        return 25.0  # Return normal BMI as default
     height_m = height_cm / 100
     return round(weight_kg / (height_m ** 2), 1)
 

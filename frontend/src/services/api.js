@@ -1,4 +1,4 @@
-const API_BASE_URL = "http://localhost:8002";
+const API_BASE_URL = "http://localhost:8000";
 
 /**
  * Fetch all available foods from the database
