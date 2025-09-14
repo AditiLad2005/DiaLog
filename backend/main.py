@@ -12,6 +12,16 @@ except ImportError:
 from pydantic import BaseModel
 from improved_model_system import MealSafetyPredictor, RiskLevel, run_acceptance_tests
 
+# Import personalized ML model
+try:
+    from personalized_ml_model import PersonalizedMealRecommender
+    PERSONALIZED_ML_AVAILABLE = True
+    print("✅ Personalized ML model imported successfully")
+except ImportError as e:
+    print(f"⚠️ Personalized ML model not available: {e}")
+    PersonalizedMealRecommender = None
+    PERSONALIZED_ML_AVAILABLE = False
+
 
 # Pydantic model for meal log
 
@@ -173,10 +183,12 @@ scaler = None
 feature_columns = None
 # New improved predictor
 meal_safety_predictor = None
+# Personalized ML recommender
+personalized_recommender = None
 
 # Load model and artifacts
 def load_model_artifacts():
-    global model, scaler, feature_columns, meal_safety_predictor
+    global model, scaler, feature_columns, meal_safety_predictor, personalized_recommender
     try:
         # Initialize improved prediction system with medical model
         meal_safety_predictor = MealSafetyPredictor()
@@ -184,6 +196,17 @@ def load_model_artifacts():
         meal_safety_predictor.load_model(MODEL_DIR)  # This will load the medical model
         
         print("✅ Medical prediction system initialized")
+        
+        # Initialize personalized ML recommender
+        if PERSONALIZED_ML_AVAILABLE:
+            try:
+                personalized_recommender = PersonalizedMealRecommender(
+                    data_path=str(DATA_DIR / "User_Logs_Dataset.csv")
+                )
+                print("✅ Personalized ML recommender initialized")
+            except Exception as e:
+                print(f"⚠️ Could not initialize personalized recommender: {e}")
+                personalized_recommender = None
         
         return True
         
@@ -812,6 +835,188 @@ def generate_intelligent_reasons(food_name: str, food_row: pd.Series, portion_fe
         
     return reasons[:3]  # Limit to 3 most relevant reasons
 
+# New personalized recommendation request model
+class TrulyPersonalizedRequest(BaseModel):
+    user_id: int
+    age: int
+    gender: str
+    weight_kg: float
+    height_cm: float
+    fasting_sugar: float
+    post_meal_sugar: int
+    diabetes_type: str
+    time_of_day: str = "Lunch"
+    count: int = 6
+
+@app.post("/truly-personalized-recommendations")
+async def get_truly_personalized_recommendations(request: TrulyPersonalizedRequest):
+    """
+    Generate truly personalized meal recommendations using individual user ML models
+    trained on User_Logs_Dataset.csv - this replaces generic reasons with user-specific insights.
+    """
+    global personalized_recommender
+    
+    if personalized_recommender is None:
+        # Fallback to general recommendations if personalized not available
+        return await get_general_ml_recommendations(request)
+    
+    try:
+        # Get available foods from the main dataset
+        if meal_safety_predictor is None or not hasattr(meal_safety_predictor, 'food_df'):
+            raise HTTPException(status_code=503, detail="Food dataset not loaded")
+        
+        all_foods = list(meal_safety_predictor.food_df.index)
+        
+        # Filter foods based on time of day
+        time_filters = {
+            'Breakfast': ['idli', 'dosa', 'poha', 'upma', 'oats', 'daliya', 'paratha', 'milk', 'bread'],
+            'Lunch': ['dal', 'rice', 'roti', 'sabzi', 'curry', 'pulao', 'khichdi', 'vegetable'],
+            'Dinner': ['soup', 'dal', 'roti', 'sabzi', 'curry', 'vegetable', 'salad'],
+            'Snack': ['fruit', 'nuts', 'tea', 'milk', 'sprouts', 'chaat', 'biscuit']
+        }
+        
+        relevant_keywords = time_filters.get(request.time_of_day, time_filters['Lunch'])
+        candidate_foods = []
+        
+        for food in all_foods:
+            food_lower = food.lower()
+            if any(keyword in food_lower for keyword in relevant_keywords):
+                candidate_foods.append(food)
+        
+        # If no specific matches, use broader selection
+        if len(candidate_foods) < request.count:
+            candidate_foods = all_foods[:50]  # Use first 50 foods
+        
+        # Prepare user features for personalized prediction
+        user_features = {
+            'Age': request.age,
+            'Weight': request.weight_kg,
+            'Height': request.height_cm,
+            'BMI': request.weight_kg / ((request.height_cm / 100) ** 2),
+            'Gender_encoded': 1 if request.gender.lower() == 'male' else 0,
+            'Diabetes_Type_encoded': 0 if request.diabetes_type == 'Type1' else 1,
+            'Meal_Time_encoded': {'Breakfast': 0, 'Lunch': 1, 'Dinner': 2, 'Snack': 3}.get(request.time_of_day, 1)
+        }
+        
+        # Get personalized predictions for each food
+        food_recommendations = []
+        for food in candidate_foods[:30]:  # Limit for performance
+            try:
+                # Get personalized blood sugar prediction
+                predicted_bs = personalized_recommender.predict_blood_sugar(
+                    request.user_id, food, user_features
+                )
+                
+                # Get personalized recommendation reason
+                personalized_reason = personalized_recommender.get_personalized_recommendation_reason(
+                    request.user_id, food, predicted_bs
+                )
+                
+                # Determine risk level based on predicted blood sugar
+                if predicted_bs <= 140:
+                    risk_level = "safe"
+                    safety_score = 1.0
+                elif predicted_bs <= 180:
+                    risk_level = "caution"
+                    safety_score = 0.6
+                else:
+                    risk_level = "unsafe"
+                    safety_score = 0.2
+                
+                # Get nutritional info
+                food_row = meal_safety_predictor.food_df.loc[food]
+                
+                food_recommendations.append({
+                    'name': food,
+                    'predicted_blood_sugar': round(predicted_bs, 1),
+                    'risk_level': risk_level,
+                    'safety_score': safety_score,
+                    'personalized_reason': personalized_reason,
+                    'calories': round(food_row.get('Calorie', 0) * 200 / 100),
+                    'carbs': round(food_row.get('Carbohydrate (g)', 0) * 200 / 100, 1),
+                    'protein': round(food_row.get('Protein (g)', 0) * 200 / 100, 1),
+                    'fat': round(food_row.get('Total Fat (g)', 0) * 200 / 100, 1),
+                    'fiber': round(food_row.get('Dietary Fiber (g)', 0) * 200 / 100, 1),
+                    'glycemicIndex': food_row.get('GI', 50),
+                    'portionSize': "200g (1 serving)",
+                    'timeOfDay': request.time_of_day
+                })
+                
+            except Exception as e:
+                # Skip foods that cause errors
+                continue
+        
+        # Sort by safety score (higher = safer)
+        food_recommendations.sort(key=lambda x: x['safety_score'], reverse=True)
+        top_recommendations = food_recommendations[:request.count]
+        
+        # Get user's personal insights
+        personal_insights = personalized_recommender.get_personal_insights(request.user_id)
+        
+        # Get user model status
+        model_status = personalized_recommender.get_user_model_status(request.user_id)
+        
+        return {
+            'recommendations': top_recommendations,
+            'personalization': {
+                'user_id': request.user_id,
+                'has_personal_model': model_status['has_personal_model'],
+                'meal_count': model_status['meal_count'],
+                'model_score': model_status['model_score'],
+                'personal_insights': personal_insights,
+                'personalization_note': (
+                    "Recommendations based on your personal meal history and glycemic responses" 
+                    if model_status['has_personal_model'] 
+                    else "General ML recommendations - log more meals to get personalized insights"
+                )
+            },
+            'user_profile': {
+                'bmi': user_features['BMI'],
+                'diabetes_type': request.diabetes_type,
+                'personalized': model_status['has_personal_model']
+            }
+        }
+        
+    except Exception as e:
+        # Fallback to general recommendations on error
+        print(f"⚠️ Personalized recommendation error: {e}")
+        return await get_general_ml_recommendations(request)
+
+async def get_general_ml_recommendations(request):
+    """Fallback to general ML recommendations when personalized not available"""
+    # Convert to PersonalizedRecommendationRequest format
+    general_request = PersonalizedRecommendationRequest(
+        age=request.age,
+        gender=request.gender,
+        weight_kg=request.weight_kg,
+        height_cm=request.height_cm,
+        fasting_sugar=request.fasting_sugar,
+        post_meal_sugar=request.post_meal_sugar,
+        diabetes_type=request.diabetes_type,
+        time_of_day=request.time_of_day,
+        count=request.count
+    )
+    
+    # Get general recommendations and add note about personalization
+    general_result = await get_personalized_recommendations(general_request)
+    
+    # Add personalization status
+    general_result['personalization'] = {
+        'user_id': request.user_id,
+        'has_personal_model': False,
+        'meal_count': 0,
+        'model_score': None,
+        'personal_insights': "Log more meals to unlock personalized recommendations!",
+        'personalization_note': "General ML recommendations - personalized model not available"
+    }
+    
+    # Update reasons to indicate they're general
+    for rec in general_result['recommendations']:
+        if 'reasons' in rec:
+            rec['reasons'] = [f"Traditional healthy option: {reason}" for reason in rec['reasons']]
+    
+    return general_result
+
 if __name__ == "__main__":
     import uvicorn
-    uvicorn.run(app, host="0.0.0.0", port=8000)
+    uvicorn.run(app, host="0.0.0.0", port=8002)

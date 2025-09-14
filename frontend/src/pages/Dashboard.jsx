@@ -9,11 +9,13 @@ import {
   SparklesIcon,
   ArrowPathIcon,
   ChevronUpIcon,
-  ChevronDownIcon
+  ChevronDownIcon,
+  CursorArrowRaysIcon
 } from '@heroicons/react/24/outline';
 import SafeMealSuggestions from '../components/SafeMealSuggestions';
 import BloodSugarLineChart from '../components/LineChart';
 import MealRiskDonutChart from '../components/DonutChart';
+import HealthPlanModal from '../components/HealthPlanModal';
 
 import { collection, query, orderBy, getDocs } from "firebase/firestore";
 import { db, auth } from "../services/firebase";
@@ -26,6 +28,11 @@ const Dashboard = () => {
   const [recentLogs, setRecentLogs] = useState([]);
   const [error, setError] = useState(null);
   const [showAllLogs, setShowAllLogs] = useState(false);
+  
+  // Health Plan Modal state
+  const [isHealthPlanOpen, setIsHealthPlanOpen] = useState(false);
+  const [selectedMeal, setSelectedMeal] = useState(null);
+  const [selectedRiskLevel, setSelectedRiskLevel] = useState('low');
 
   // Fetch logs from Firebase
   const fetchLogs = async () => {
@@ -174,6 +181,53 @@ const Dashboard = () => {
     riskyMeals: riskData?.data?.find(item => item.name === 'High Risk')?.count || 0
   };
 
+  // Handle meal click to show health plan
+  const handleMealClick = (log) => {
+    const mealName = Array.isArray(log.meals_taken) && log.meals_taken.length > 0 
+      ? log.meals_taken[0].meal 
+      : (log.meal || 'Unknown Meal');
+    
+    // Get risk level from various sources or determine from food content
+    let risk = log.riskLevel || log.prediction?.risk_level || log.prediction?.risk || 
+      (log.prediction?.recommendations && log.prediction.recommendations[0]?.risk_level);
+    
+    // If no risk level found, determine from food content and blood sugar
+    if (!risk) {
+      const foodLower = mealName.toLowerCase();
+      const postMealSugar = log.sugar_level_post || log.postMealSugar || 0;
+      
+      // High risk indicators
+      if (foodLower.includes('sweet') || foodLower.includes('dessert') || foodLower.includes('cake') ||
+          foodLower.includes('sugar') || foodLower.includes('ice cream') || foodLower.includes('chocolate') ||
+          postMealSugar > 200) {
+        risk = 'high';
+      }
+      // Medium risk indicators
+      else if (foodLower.includes('rice') || foodLower.includes('bread') || foodLower.includes('pasta') ||
+               foodLower.includes('fried') || foodLower.includes('potato') || foodLower.includes('noodles') ||
+               (postMealSugar > 140 && postMealSugar <= 200)) {
+        risk = 'medium';
+      }
+      // Low risk
+      else {
+        risk = 'low';
+      }
+    }
+    
+    setSelectedMeal({
+      mealName: mealName,
+      timestamp: log.createdAt?.toDate?.() ? log.createdAt.toDate().toLocaleDateString() : '',
+      fastingSugar: log.sugar_level_fasting || log.fastingSugar || '',
+      postMealSugar: log.sugar_level_post || log.postMealSugar || '',
+      timeOfDay: Array.isArray(log.meals_taken) && log.meals_taken.length > 0 
+        ? log.meals_taken[0].time_of_day 
+        : (log.time_of_day || '')
+    });
+    
+    setSelectedRiskLevel(risk);
+    setIsHealthPlanOpen(true);
+  };
+
   return (
     <div className="min-h-screen bg-primary-50 dark:bg-gray-900 py-12 transition-all duration-300">
       {error && (
@@ -287,20 +341,55 @@ const Dashboard = () => {
                     const postMeal = log.sugar_level_post || log.postMealSugar || '';
                     const createdAt = log.createdAt?.toDate?.() ? log.createdAt.toDate().toLocaleDateString() : '';
                     const time = Array.isArray(log.meals_taken) && log.meals_taken.length > 0 ? log.meals_taken[0].time_of_day : (log.time_of_day || '');
-                    const risk = log.riskLevel || log.prediction?.risk_level || log.prediction?.risk || (log.prediction?.recommendations && log.prediction.recommendations[0]?.risk_level) || '';
+                    
+                    // Get risk level with smart fallback
+                    let risk = log.riskLevel || log.prediction?.risk_level || log.prediction?.risk || 
+                      (log.prediction?.recommendations && log.prediction.recommendations[0]?.risk_level);
+                    
+                    // If no risk level found, determine from food content and blood sugar
+                    if (!risk) {
+                      const foodLower = mealName.toLowerCase();
+                      const postMealSugar = log.sugar_level_post || log.postMealSugar || 0;
+                      
+                      // High risk indicators
+                      if (foodLower.includes('sweet') || foodLower.includes('dessert') || foodLower.includes('cake') ||
+                          foodLower.includes('sugar') || foodLower.includes('ice cream') || foodLower.includes('chocolate') ||
+                          postMealSugar > 200) {
+                        risk = 'high';
+                      }
+                      // Medium risk indicators
+                      else if (foodLower.includes('rice') || foodLower.includes('bread') || foodLower.includes('pasta') ||
+                               foodLower.includes('fried') || foodLower.includes('potato') || foodLower.includes('noodles') ||
+                               (postMealSugar > 140 && postMealSugar <= 200)) {
+                        risk = 'medium';
+                      }
+                      // Low risk
+                      else {
+                        risk = 'low';
+                      }
+                    }
                     return (
                       <div
                         key={log.id}
+                        onClick={() => handleMealClick(log)}
                         className={`
-                          p-4 rounded-lg border-2 transition-colors duration-200
+                          relative p-4 rounded-lg border-2 transition-all duration-200 cursor-pointer
+                          hover:shadow-lg hover:scale-[1.02] transform group
                           ${risk === 'high' 
-                            ? 'border-danger-600 bg-danger-700 text-white' 
+                            ? 'border-danger-600 bg-danger-700 text-white hover:bg-danger-600' 
                             : risk === 'medium'
-                            ? 'border-warning-200 bg-warning-50 dark:border-warning-700 dark:bg-warning-900/20'
-                            : 'border-success-200 bg-success-50 dark:border-success-700 dark:bg-success-900/20'
+                            ? 'border-warning-200 bg-warning-50 dark:border-warning-700 dark:bg-warning-900/20 hover:bg-warning-100 dark:hover:bg-warning-900/30'
+                            : 'border-success-200 bg-success-50 dark:border-success-700 dark:bg-success-900/20 hover:bg-success-100 dark:hover:bg-success-900/30'
                           }
                         `}
                       >
+                        {/* Hover indicator */}
+                        <div className="absolute top-2 right-2 opacity-0 group-hover:opacity-100 transition-opacity duration-200">
+                          <div className="flex items-center space-x-1 px-2 py-1 bg-white dark:bg-gray-800 rounded-full shadow-md">
+                            <CursorArrowRaysIcon className="h-3 w-3 text-primary-600 dark:text-primary-400" />
+                            <span className="text-xs text-primary-600 dark:text-primary-400 font-medium">View Health Plan</span>
+                          </div>
+                        </div>
                         <div className="flex items-center justify-between">
                           <div className="flex items-center space-x-4">
                             {risk !== 'high' && (
@@ -516,6 +605,14 @@ const Dashboard = () => {
           </p>
         </div>
       </div>
+
+      {/* Health Plan Modal */}
+      <HealthPlanModal
+        meal={selectedMeal}
+        riskLevel={selectedRiskLevel}
+        isOpen={isHealthPlanOpen}
+        onClose={() => setIsHealthPlanOpen(false)}
+      />
     </div>
   );
 };

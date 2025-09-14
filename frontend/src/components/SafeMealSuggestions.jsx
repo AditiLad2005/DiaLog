@@ -7,7 +7,7 @@ import {
   LightBulbIcon,
   PlusIcon
 } from '@heroicons/react/24/outline';
-import { fetchFoods, getPersonalizedRecommendations } from '../services/api';
+import { fetchFoods, getPersonalizedRecommendations, getTrulyPersonalizedRecommendations } from '../services/api';
 import MealCard from './MealCard';
 
 const SafeMealSuggestions = ({ userProfile = {}, currentMeal = null, className = "" }) => {
@@ -16,6 +16,7 @@ const SafeMealSuggestions = ({ userProfile = {}, currentMeal = null, className =
   const [selectedCategory, setSelectedCategory] = useState('all');
   const [availableMeals, setAvailableMeals] = useState([]);
   const [usedMeals, setUsedMeals] = useState(new Set());
+  const [isVegOnly, setIsVegOnly] = useState(false); // New state for veg/non-veg filter
 
   // Categories for meal recommendations
   const categories = [
@@ -25,6 +26,20 @@ const SafeMealSuggestions = ({ userProfile = {}, currentMeal = null, className =
     { id: 'dinner', name: 'Dinner', icon: CheckCircleIcon },
     { id: 'snacks', name: 'Snacks', icon: CheckCircleIcon }
   ];
+
+  // Function to determine if a meal is vegetarian
+  const isVegetarian = (mealName) => {
+    const name = mealName.toLowerCase();
+    const nonVegKeywords = [
+      'chicken', 'mutton', 'fish', 'egg', 'meat', 'prawn', 'shrimp', 'crab',
+      'lamb', 'beef', 'pork', 'turkey', 'duck', 'seafood', 'salmon', 'tuna',
+      'bacon', 'ham', 'sausage', 'biryani chicken', 'chicken curry', 'fish curry',
+      'egg curry', 'omelet', 'omelette', 'scrambled egg', 'boiled egg'
+    ];
+    
+    // Check if any non-veg keyword is present in the meal name
+    return !nonVegKeywords.some(keyword => name.includes(keyword));
+  };
 
   // Load meals from dataset
   useEffect(() => {
@@ -83,8 +98,13 @@ const SafeMealSuggestions = ({ userProfile = {}, currentMeal = null, className =
     // Filter meals based on category
     let candidateMeals = [...availableMeals];
     
+    // Apply veg/non-veg filter first
+    if (isVegOnly) {
+      candidateMeals = candidateMeals.filter(meal => isVegetarian(meal));
+    }
+    
     if (category !== 'all') {
-      candidateMeals = availableMeals.filter(meal => {
+      candidateMeals = candidateMeals.filter(meal => {
         const name = meal.toLowerCase();
         switch (category) {
           case 'breakfast':
@@ -179,10 +199,17 @@ const SafeMealSuggestions = ({ userProfile = {}, currentMeal = null, className =
       count: count
     };
 
-    const response = await getPersonalizedRecommendations(requestData);
+    // Use truly personalized recommendations if user_id is available
+    let response;
+    if (userProfile.user_id) {
+      requestData.user_id = userProfile.user_id;
+      response = await getTrulyPersonalizedRecommendations(requestData);
+    } else {
+      response = await getPersonalizedRecommendations(requestData);
+    }
     
     // Transform ML response to match expected format
-    return response.recommendations.map(rec => ({
+    let transformedRecommendations = response.recommendations.map(rec => ({
       name: rec.name,
       calories: rec.calories,
       carbs: rec.carbs,
@@ -193,13 +220,23 @@ const SafeMealSuggestions = ({ userProfile = {}, currentMeal = null, className =
       portionSize: rec.portionSize,
       timeOfDay: rec.timeOfDay,
       riskScore: rec.risk_level === 'safe' ? 0.1 : rec.risk_level === 'caution' ? 0.5 : 0.8,
-      confidence: rec.confidence,
+      confidence: rec.confidence || 0.8,
       category: category === 'all' ? 'lunch' : category,
-      reasons: rec.reasons,
+      reasons: rec.personalized_reason ? [rec.personalized_reason] : (rec.reasons || []),
       mlPowered: true,  // Flag to indicate this is ML-generated
-      explanation: rec.explanation
+      explanation: rec.explanation,
+      isPersonalized: !!rec.personalized_reason,  // Flag for personalized vs general
+      predicted_blood_sugar: rec.predicted_blood_sugar,
+      personalization_info: response.personalization || null  // Store personalization details
     }));
-  }, [userProfile.age, userProfile.gender, userProfile.weight_kg, userProfile.height_cm, userProfile.fasting_sugar, userProfile.post_meal_sugar, userProfile.diabetes_type]);
+
+    // Apply veg/non-veg filter to ML recommendations
+    if (isVegOnly) {
+      transformedRecommendations = transformedRecommendations.filter(rec => isVegetarian(rec.name));
+    }
+
+    return transformedRecommendations;
+  }, [userProfile.age, userProfile.gender, userProfile.weight_kg, userProfile.height_cm, userProfile.fasting_sugar, userProfile.post_meal_sugar, userProfile.diabetes_type, userProfile.user_id, isVegOnly]);
 
   // Consolidated effect for loading recommendations
   // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -225,7 +262,7 @@ const SafeMealSuggestions = ({ userProfile = {}, currentMeal = null, className =
     };
 
     loadRecommendations();
-  }, [availableMeals.length, selectedCategory, userProfile.age, userProfile.weight_kg, userProfile.height_cm, getMLRecommendations]);
+  }, [availableMeals.length, selectedCategory, userProfile.age, userProfile.weight_kg, userProfile.height_cm, getMLRecommendations, isVegOnly]);
 
   const generateRecommendations = useCallback(async () => {
     if (availableMeals.length === 0 || isLoading) return; // Prevent multiple simultaneous calls
@@ -247,7 +284,7 @@ const SafeMealSuggestions = ({ userProfile = {}, currentMeal = null, className =
     }
     // Add a small delay to prevent rapid flickering
     setTimeout(() => setIsLoading(false), 300);
-  }, [availableMeals.length, isLoading, userProfile.age, userProfile.weight_kg, userProfile.height_cm, selectedCategory, getMLRecommendations]);
+  }, [availableMeals.length, isLoading, userProfile.age, userProfile.weight_kg, userProfile.height_cm, selectedCategory, getMLRecommendations, isVegOnly]);
 
   return (
     <div className={`bg-white dark:bg-gray-800 rounded-xl shadow-soft p-6 ${className}`}>
@@ -277,6 +314,38 @@ const SafeMealSuggestions = ({ userProfile = {}, currentMeal = null, className =
         </button>
       </div>
 
+      {/* Veg/Non-Veg Toggle */}
+      <div className="flex items-center justify-between mb-4 p-4 bg-gray-50 dark:bg-gray-700 rounded-lg">
+        <div className="flex items-center space-x-3">
+          <div className="text-sm font-medium text-gray-700 dark:text-gray-300">
+            Food Preference
+          </div>
+          <div className="flex items-center space-x-2">
+            <span className={`text-sm ${!isVegOnly ? 'text-gray-900 dark:text-white font-medium' : 'text-gray-500 dark:text-gray-400'}`}>
+              All Foods
+            </span>
+            <button
+              onClick={() => setIsVegOnly(!isVegOnly)}
+              className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors duration-200 ${
+                isVegOnly ? 'bg-green-600' : 'bg-gray-300 dark:bg-gray-600'
+              }`}
+            >
+              <span
+                className={`inline-block h-4 w-4 transform rounded-full bg-white transition duration-200 ${
+                  isVegOnly ? 'translate-x-6' : 'translate-x-1'
+                }`}
+              />
+            </button>
+            <span className={`text-sm ${isVegOnly ? 'text-green-600 font-medium' : 'text-gray-500 dark:text-gray-400'}`}>
+              Vegetarian Only
+            </span>
+          </div>
+        </div>
+        <div className="text-xs text-gray-500 dark:text-gray-400">
+          {isVegOnly ? '🌱 Showing vegetarian meals only' : '🍽️ Showing all meal types'}
+        </div>
+      </div>
+
       {/* Category Filters */}
       <div className="flex flex-wrap gap-2 mb-6">
         {categories.map((category) => (
@@ -303,6 +372,43 @@ const SafeMealSuggestions = ({ userProfile = {}, currentMeal = null, className =
           <div className="text-center">
             <ArrowPathIcon className="h-8 w-8 text-primary-600 animate-spin mx-auto mb-4" />
             <p className="text-gray-600 dark:text-gray-400">Analyzing your profile and generating personalized recommendations...</p>
+          </div>
+        </div>
+      )}
+
+      {/* Personalization Status */}
+      {!isLoading && suggestions.length > 0 && suggestions[0]?.personalization_info && (
+        <div className={`p-4 rounded-lg mb-6 ${
+          suggestions[0].personalization_info.has_personal_model 
+            ? 'bg-green-50 dark:bg-green-900/20 border border-green-200 dark:border-green-800' 
+            : 'bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-800'
+        }`}>
+          <div className="flex items-start space-x-3">
+            <SparklesIcon className={`h-5 w-5 mt-0.5 ${
+              suggestions[0].personalization_info.has_personal_model ? 'text-green-600' : 'text-blue-600'
+            }`} />
+            <div className="flex-1">
+              <h4 className={`font-medium ${
+                suggestions[0].personalization_info.has_personal_model ? 'text-green-800 dark:text-green-200' : 'text-blue-800 dark:text-blue-200'
+              }`}>
+                {suggestions[0].personalization_info.personalization_note}
+              </h4>
+              {suggestions[0].personalization_info.personal_insights && (
+                <p className={`text-sm mt-1 ${
+                  suggestions[0].personalization_info.has_personal_model ? 'text-green-700 dark:text-green-300' : 'text-blue-700 dark:text-blue-300'
+                }`}>
+                  {suggestions[0].personalization_info.personal_insights}
+                </p>
+              )}
+              {suggestions[0].personalization_info.has_personal_model && (
+                <div className="flex items-center space-x-4 mt-2 text-xs text-green-600 dark:text-green-400">
+                  <span>{suggestions[0].personalization_info.meal_count} meals analyzed</span>
+                  {suggestions[0].personalization_info.model_score && (
+                    <span>Model accuracy: {(suggestions[0].personalization_info.model_score * 100).toFixed(0)}%</span>
+                  )}
+                </div>
+              )}
+            </div>
           </div>
         </div>
       )}
@@ -343,19 +449,41 @@ const SafeMealSuggestions = ({ userProfile = {}, currentMeal = null, className =
                     <div className="flex items-center space-x-2 mb-2">
                       <LightBulbIcon className="h-4 w-4 text-warning-500" />
                       <span className="text-sm font-medium text-gray-700 dark:text-gray-300">
-                        {meal.mlPowered ? 'AI Analysis:' : 'Why we recommend this:'}
+                        {meal.isPersonalized ? '🎯 Personal Analysis:' : meal.mlPowered ? 'AI Analysis:' : 'Why we recommend this:'}
                       </span>
-                      {meal.mlPowered && (
-                        <span className="px-2 py-0.5 bg-primary-100 text-primary-700 text-xs rounded-full">
-                          ML Powered
-                        </span>
-                      )}
+                      <div className="flex space-x-1">
+                        {meal.mlPowered && (
+                          <span className="px-2 py-0.5 bg-primary-100 text-primary-700 text-xs rounded-full">
+                            ML Powered
+                          </span>
+                        )}
+                        {meal.isPersonalized && (
+                          <span className="px-2 py-0.5 bg-green-100 text-green-700 text-xs rounded-full">
+                            Personalized
+                          </span>
+                        )}
+                        {meal.predicted_blood_sugar && (
+                          <span className={`px-2 py-0.5 text-xs rounded-full ${
+                            meal.predicted_blood_sugar <= 140 
+                              ? 'bg-green-100 text-green-700' 
+                              : meal.predicted_blood_sugar <= 180 
+                                ? 'bg-yellow-100 text-yellow-700' 
+                                : 'bg-red-100 text-red-700'
+                          }`}>
+                            {meal.predicted_blood_sugar}mg/dL
+                          </span>
+                        )}
+                      </div>
                     </div>
                     <ul className="text-xs text-gray-600 dark:text-gray-400 space-y-1">
                       {meal.reasons.slice(0, 3).map((reason, idx) => (
                         <li key={idx} className="flex items-start space-x-2">
-                          <CheckCircleIcon className="h-3 w-3 text-success-500 mt-0.5 flex-shrink-0" />
-                          <span>{reason}</span>
+                          <CheckCircleIcon className={`h-3 w-3 mt-0.5 flex-shrink-0 ${
+                            meal.isPersonalized ? 'text-green-500' : 'text-success-500'
+                          }`} />
+                          <span className={meal.isPersonalized ? 'font-medium text-green-700 dark:text-green-300' : ''}>
+                            {reason}
+                          </span>
                         </li>
                       ))}
                     </ul>
