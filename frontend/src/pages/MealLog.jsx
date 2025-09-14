@@ -176,41 +176,68 @@ const MealLog = () => {
     e.preventDefault();
     setIsLoading(true);
     try {
-      // Prepare payload for backend
-      const meal = formData.meals_taken[0];
       // Use user profile if available
       const profile = userProfile || {};
-      const payload = {
+      
+      // Prepare aggregated meal payload for backend
+      const aggregatedPayload = {
+        userId: profile.userId || 'anonymous',
         age: parseInt(profile.age) || 35,
         gender: profile.gender || 'Male',
         weight_kg: parseFloat(profile.weight) || 70,
         height_cm: parseFloat(profile.height) || 170,
-        fasting_sugar: parseFloat(formData.fastingSugar),
-        post_meal_sugar: parseFloat(formData.postMealSugar),
-        meal_taken: meal.meal,
-        time_of_day: meal.time_of_day,
-        portion_size: parseFloat(meal.quantity),
-        portion_unit: meal.unit
+        sugar_level_fasting: parseFloat(formData.fastingSugar),
+        sugar_level_post: parseFloat(formData.postMealSugar),
+        meals: formData.meals_taken.filter(meal => meal.meal && meal.meal.trim() !== '').map(meal => ({
+          meal_name: meal.meal,
+          quantity: parseFloat(meal.quantity) || 1,
+          unit: meal.unit || 'piece',
+          time_of_day: meal.time_of_day || 'Breakfast (7-9 AM)'
+        })),
+        notes: formData.notes || ''
       };
-  // Call backend for prediction
-  const predictionResult = await (await import('../services/api')).predictDiabetesFriendly(payload);
-  setPrediction(predictionResult);
-  // Extract risk level for dashboard sync (backend returns risk_level)
-  let riskLevel = '';
-  if (predictionResult.risk_level) riskLevel = predictionResult.risk_level;
-  else if (predictionResult.risk) riskLevel = predictionResult.risk;
-  else if (predictionResult.recommendations && predictionResult.recommendations[0]?.risk_level) riskLevel = predictionResult.recommendations[0].risk_level;
-  
-  // Ensure prediction has risk field for dashboard compatibility
-  const enhancedPrediction = {
-    ...predictionResult,
-    risk: riskLevel
-  };
-  
-  // Save log to Firestore with riskLevel at top level and prediction.risk
-  await saveLog(formData, { prediction: enhancedPrediction, riskLevel });
+
+      console.log('Sending aggregated meal payload:', aggregatedPayload);
+
+      // Call backend for aggregated prediction and logging
+      const result = await (await import('../services/api')).logMealToFirestore(aggregatedPayload);
+      
+      if (result.success) {
+        setPrediction(result.prediction);
+        
+        // Enhanced prediction display with aggregated nutrition info
+        const enhancedPrediction = {
+          ...result.prediction,
+          aggregated_nutrition: result.aggregated_nutrition,
+          meal_combination: result.aggregated_nutrition.meal_names.join(', '),
+          total_calories: result.aggregated_nutrition.calories,
+          total_glycemic_load: result.aggregated_nutrition.glycemic_load
+        };
+        
+        setPrediction(enhancedPrediction);
+        
+        // Reset form after successful submission
+        setFormData({
+          fastingSugar: '',
+          postMealSugar: '',
+          meals_taken: [{ meal: '', quantity: 1, unit: 'piece', time_of_day: 'Breakfast (7-9 AM)', showDropdown: false }],
+          notes: ''
+        });
+        
+      } else {
+        throw new Error('Failed to log meal and get prediction');
+      }
+
     } catch (err) {
       console.error('Prediction or log error:', err);
+      setPrediction({
+        error: true,
+        message: 'Error analyzing meal. Please try again.',
+        recommendations: [
+          { name: 'Check your internet connection', reason: '' },
+          { name: 'Verify all meal names are correct', reason: '' }
+        ]
+      });
     } finally {
       setIsLoading(false);
     }
@@ -334,7 +361,7 @@ const MealLog = () => {
             {/* Prediction */}
             {prediction && (
               <div className={`border rounded-xl p-6 ${prediction.color}`}>
-                <h3 className="font-semibold mb-2 text-white">Health Assessment</h3>
+                <h3 className="font-semibold mb-2 text-white">AI Health Assessment</h3>
                 <p className="text-sm mb-4 text-white">{prediction.message}</p>
                 <ul className="text-sm list-disc pl-5 text-white">
                   {prediction.recommendations.map((rec, idx) => (

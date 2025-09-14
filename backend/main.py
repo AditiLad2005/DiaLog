@@ -34,10 +34,25 @@ class MealLogMeal(BaseModel):
 
 class MealLog(BaseModel):
     userId: str
+    age: int = 35
+    gender: str = "Male"
+    weight_kg: float = 70
+    height_cm: float = 170
     sugar_level_fasting: float
     sugar_level_post: float
     meals: list[MealLogMeal]
+    notes: str = ""
     createdAt: str = None  # Optional, can be set by backend
+
+class AggregatedMealRequest(BaseModel):
+    age: int
+    gender: str
+    weight_kg: float
+    height_cm: float
+    fasting_sugar: float
+    post_meal_sugar: float
+    meals: list[MealLogMeal]
+    notes: str = ""
 
 
 
@@ -105,6 +120,158 @@ DATA_DIR = BASE_DIR / "data"
 MODEL_DIR = BASE_DIR / "models"
 
 
+# Function to calculate aggregated nutritional values for multiple meals
+def calculate_aggregated_nutrition(meals: list[MealLogMeal]) -> dict:
+    total_nutrition = {
+        'calories': 0,
+        'carbs_g': 0,
+        'protein_g': 0,
+        'fat_g': 0,
+        'fiber_g': 0,
+        'glycemic_load': 0,
+        'meal_names': [],
+        'portion_details': []
+    }
+    
+    for meal in meals:
+        if meal.meal_name not in food_df.index:
+            print(f"Warning: {meal.meal_name} not found in food database")
+            continue
+            
+        food_row = food_df.loc[meal.meal_name]
+        
+        # Convert portion to grams using realistic mapping
+        portion_weight_grams = get_portion_weight_grams(meal.quantity, meal.unit)
+        
+        # Calculate multiplier based on 100g serving (assuming dataset values are per 100g)
+        portion_multiplier = portion_weight_grams / 100.0
+        
+        # Calculate nutritional values
+        calories = float(food_row.get('calories_kcal', 0)) * portion_multiplier
+        carbs = float(food_row.get('carbs_g', 0)) * portion_multiplier
+        protein = float(food_row.get('protein_g', 0)) * portion_multiplier
+        fat = float(food_row.get('fat_g', 0)) * portion_multiplier
+        fiber = float(food_row.get('fiber_g', 0)) * portion_multiplier
+        
+        # Calculate glycemic load: GL = (GI × carbs_in_portion) / 100
+        gi = float(food_row.get('glycemic_index', 50))
+        glycemic_load = (gi * carbs) / 100.0
+        
+        # Add to totals
+        total_nutrition['calories'] += calories
+        total_nutrition['carbs_g'] += carbs
+        total_nutrition['protein_g'] += protein
+        total_nutrition['fat_g'] += fat
+        total_nutrition['fiber_g'] += fiber
+        total_nutrition['glycemic_load'] += glycemic_load
+        
+        total_nutrition['meal_names'].append(meal.meal_name)
+        total_nutrition['portion_details'].append(
+            f"{meal.quantity} {meal.unit} {meal.meal_name} ({portion_weight_grams:.0f}g)"
+        )
+    
+    # Calculate weighted average glycemic index
+    total_carbs = total_nutrition['carbs_g']
+    if total_carbs > 0:
+        total_nutrition['avg_glycemic_index'] = (total_nutrition['glycemic_load'] * 100) / total_carbs
+    else:
+        total_nutrition['avg_glycemic_index'] = 50
+    
+    return total_nutrition
+
+@app.post("/predict-aggregated-meal")
+async def predict_aggregated_meal_safety(request: AggregatedMealRequest):
+    """
+    Predict safety for multiple meals combined as one meal event.
+    Uses proper glycemic load calculation and risk assessment.
+    """
+    try:
+        if model is None:
+            raise HTTPException(status_code=503, detail="Model not loaded. Please check server configuration.")
+        
+        if food_df.empty:
+            raise HTTPException(status_code=500, detail="Food database not loaded")
+        
+        # Calculate aggregated nutrition
+        aggregated_nutrition = calculate_aggregated_nutrition(request.meals)
+        
+        # Calculate BMI
+        bmi = calculate_bmi(request.weight_kg, request.height_cm)
+        
+        # Determine risk level based on total glycemic load
+        total_gl = aggregated_nutrition['glycemic_load']
+        total_calories = aggregated_nutrition['calories']
+        total_carbs = aggregated_nutrition['carbs_g']
+        
+        # Risk assessment based on glycemic load thresholds
+        if total_gl >= 20:
+            risk_level = "high"
+            is_safe = False
+            message = f"High glycemic load ({total_gl:.1f}). Combined meals may cause significant blood sugar spike."
+        elif total_gl >= 10:
+            risk_level = "medium"
+            is_safe = True
+            message = f"Moderate glycemic load ({total_gl:.1f}). Monitor blood sugar closely after eating."
+        else:
+            risk_level = "low"
+            is_safe = True
+            message = f"Low glycemic load ({total_gl:.1f}). This meal combination appears suitable."
+        
+        # Additional risk factors
+        if total_calories > 800:
+            risk_level = "high" if risk_level != "high" else risk_level
+            is_safe = False
+            message += f" High calorie content ({total_calories:.0f} kcal)."
+        
+        if bmi > 30:
+            message += " Consider portion control due to BMI."
+        
+        # Generate recommendations
+        recommendations = []
+        
+        if total_gl >= 20:
+            recommendations.append(Recommendation(
+                name="Reduce Portions or Add Fiber",
+                reason="High glycemic load. Try smaller portions or add vegetables/protein."
+            ))
+        
+        if total_calories > 600:
+            recommendations.append(Recommendation(
+                name="Consider Splitting Meal",
+                reason=f"High calorie content ({total_calories:.0f} kcal). Consider eating smaller portions."
+            ))
+        
+        recommendations.append(Recommendation(
+            name="Post-Meal Activity",
+            reason="Light physical activity after meals helps regulate blood sugar."
+        ))
+        
+        # Calculate confidence based on data quality
+        confidence = 0.8
+        if len(request.meals) > 1:
+            confidence += 0.1  # Higher confidence for multiple foods analyzed together
+        
+        return PredictionResponse(
+            is_safe=is_safe,
+            confidence=min(confidence, 0.95),
+            risk_level=risk_level,
+            message=message,
+            bmi=bmi,
+            nutritional_info=NutritionalInfo(
+                calories=total_calories,
+                carbs_g=total_carbs,
+                protein_g=aggregated_nutrition['protein_g'],
+                fat_g=aggregated_nutrition['fat_g'],
+                fiber_g=aggregated_nutrition['fiber_g']
+            ),
+            recommendations=recommendations
+        )
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Aggregated prediction error: {str(e)}")
+
 # Endpoint to log each meal in the list to Firestore
 @app.post("/log-meal-firestore")
 async def log_meal_to_firestore(log: MealLog):
@@ -112,61 +279,87 @@ async def log_meal_to_firestore(log: MealLog):
         raise HTTPException(status_code=503, detail="Firebase/Firestore not available")
     
     try:
-        results = []
-        for meal in log.meals:
-            # Prepare prediction request for each meal with default values
-            predict_req = MealRequest(
-                age=35,  # Default age
-                gender="Male",  # Default gender
-                weight_kg=70,  # Default weight in kg
-                height_cm=170,  # Default height in cm
-                fasting_sugar=log.sugar_level_fasting,
-                post_meal_sugar=log.sugar_level_post,
-                meal_taken=meal.meal_name,
-                time_of_day=meal.time_of_day,
-                portion_size=meal.quantity,
-                portion_unit=meal.unit
-            )
-            prediction = await predict_meal_safety(predict_req)
-            # Prepare log entry
-            log_entry = {
-                "userId": log.userId,
-                "meal_name": meal.meal_name,
-                "quantity": meal.quantity,
-                "unit": meal.unit,
-                "time_of_day": meal.time_of_day,
-                "sugar_level_fasting": log.sugar_level_fasting,
-                "sugar_level_post": log.sugar_level_post,
-                "prediction": prediction.dict(),
-                "createdAt": firestore.SERVER_TIMESTAMP if not log.createdAt else log.createdAt
-            }
-            if FIREBASE_AVAILABLE and firestore_db:
-                doc_ref = firestore_db.collection("logs").add(log_entry)
-            results.append({"doc_id": doc_ref[1].id, "meal": meal.meal_name, "risk": prediction.risk_level})
-        # Calculate overall risk for the meal event
-        risk_levels = [r["risk"] for r in results]
-        if "high" in risk_levels:
-            overall_risk = "high"
-        elif "medium" in risk_levels:
-            overall_risk = "medium"
-        else:
-            overall_risk = "low"
-
-        summary_entry = {
+        print(f"Received meal log request: {log.dict()}")
+        
+        # Create aggregated meal request for prediction
+        aggregated_request = AggregatedMealRequest(
+            age=log.age,
+            gender=log.gender,
+            weight_kg=log.weight_kg,
+            height_cm=log.height_cm,
+            fasting_sugar=log.sugar_level_fasting,
+            post_meal_sugar=log.sugar_level_post,
+            meals=log.meals,
+            notes=log.notes
+        )
+        
+        print(f"Created aggregated request: {aggregated_request.dict()}")
+        
+        # Get aggregated prediction
+        try:
+            prediction = await predict_aggregated_meal_safety(aggregated_request)
+            print(f"Prediction successful: {prediction.dict()}")
+        except Exception as pred_error:
+            print(f"Prediction error: {str(pred_error)}")
+            raise HTTPException(status_code=500, detail=f"Prediction failed: {str(pred_error)}")
+        
+        # Calculate aggregated nutrition for storage
+        try:
+            aggregated_nutrition = calculate_aggregated_nutrition(log.meals)
+            print(f"Nutrition calculation successful")
+        except Exception as nutr_error:
+            print(f"Nutrition calculation error: {str(nutr_error)}")
+            raise HTTPException(status_code=500, detail=f"Nutrition calculation failed: {str(nutr_error)}")
+        
+        # Prepare comprehensive log entry
+        log_entry = {
             "userId": log.userId,
-            "meals": [r["meal"] for r in results],
+            "meals": [
+                {
+                    "meal_name": meal.meal_name,
+                    "quantity": meal.quantity,
+                    "unit": meal.unit,
+                    "time_of_day": meal.time_of_day
+                } for meal in log.meals
+            ],
+            "meal_names": aggregated_nutrition['meal_names'],
+            "portion_details": aggregated_nutrition['portion_details'],
             "sugar_level_fasting": log.sugar_level_fasting,
             "sugar_level_post": log.sugar_level_post,
-            "overall_risk": overall_risk,
-            "individual_risks": risk_levels,
+            "aggregated_nutrition": {
+                "total_calories": aggregated_nutrition['calories'],
+                "total_carbs_g": aggregated_nutrition['carbs_g'],
+                "total_protein_g": aggregated_nutrition['protein_g'],
+                "total_fat_g": aggregated_nutrition['fat_g'],
+                "total_fiber_g": aggregated_nutrition['fiber_g'],
+                "total_glycemic_load": aggregated_nutrition['glycemic_load'],
+                "avg_glycemic_index": aggregated_nutrition['avg_glycemic_index']
+            },
+            "prediction": prediction.dict(),
+            "overall_risk": prediction.risk_level,
+            "notes": log.notes,
             "createdAt": firestore.SERVER_TIMESTAMP if not log.createdAt else log.createdAt
         }
+        
+        # Save to main logs collection
         if FIREBASE_AVAILABLE and firestore_db:
-            firestore_db.collection("logs_summary").add(summary_entry)
-
-        return {"success": True, "results": results, "overall_risk": overall_risk}
+            doc_ref = firestore_db.collection("meal_logs").add(log_entry)
+            doc_id = doc_ref[1].id
+        else:
+            doc_id = "test_id"
+        
+        return {
+            "success": True, 
+            "doc_id": doc_id, 
+            "prediction": prediction.dict(),
+            "aggregated_nutrition": aggregated_nutrition
+        }
+        
+    except HTTPException:
+        raise
     except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Failed to log meals: {str(e)}")
+        print(f"Unexpected error in log_meal_to_firestore: {str(e)}")
+        raise HTTPException(status_code=500, detail=f"Failed to log aggregated meal: {str(e)}")
 
 # Load the food dataset directly
 try:
@@ -176,6 +369,38 @@ try:
 except Exception as e:
     print(f"Error loading food dataset: {e}")
     food_df = pd.DataFrame()
+
+# Portion mapping for realistic portion sizes (in grams)
+PORTION_MAPPING = {
+    'piece': 50,      # 1 piece = 50g (average for items like idli, dosa)
+    'pieces': 50,     # plural form
+    'cup': 200,       # 1 cup = 200g 
+    'cups': 200,      # plural form
+    'bowl': 150,      # 1 bowl = 150g
+    'bowls': 150,     # plural form
+    'plate': 250,     # 1 plate = 250g
+    'plates': 250,    # plural form
+    'tablespoon': 15, # 1 tbsp = 15g
+    'tablespoons': 15,
+    'teaspoon': 5,    # 1 tsp = 5g
+    'teaspoons': 5,
+    'glass': 250,     # 1 glass = 250ml/g
+    'glasses': 250,
+    'serving': 100,   # 1 serving = 100g (standard)
+    'servings': 100,
+    'grams': 1,       # 1 gram = 1g
+    'gram': 1,
+    'g': 1,
+    'ml': 1,          # 1ml ≈ 1g for most foods
+    'milliliter': 1,
+    'milliliters': 1
+}
+
+def get_portion_weight_grams(quantity: float, unit: str) -> float:
+    """Convert quantity and unit to grams"""
+    unit_lower = unit.lower().strip()
+    multiplier = PORTION_MAPPING.get(unit_lower, 100)  # Default to 100g if unit not found
+    return quantity * multiplier
 
 # Global variables for model artifacts
 model = None
