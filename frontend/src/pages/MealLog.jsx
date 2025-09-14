@@ -6,25 +6,26 @@ import {
   ArrowPathIcon,
   CheckIcon
 } from '@heroicons/react/24/outline';
-import { saveMealLog } from "../services/firebase";
-import { auth } from "../services/firebase";
+import { useAuth } from '../contexts/AuthContext';
 import { fetchFoods } from '../services/api';
 
 const MealLog = () => {
+  const { user, loading: authLoading } = useAuth();
   const [userProfile, setUserProfile] = useState(null);
   const [mealOptions, setMealOptions] = useState([]);
   const [isLoadingMeals, setIsLoadingMeals] = useState(false);
+  
   // Fetch user profile on mount
   useEffect(() => {
     const fetchProfile = async () => {
-      const user = auth.currentUser;
+      if (authLoading || !user) return;
       if (user) {
         const profile = await (await import('../services/firebase')).fetchUserProfile(user.uid);
         if (profile) setUserProfile(profile);
       }
     };
     fetchProfile();
-  }, []);
+  }, [user, authLoading]);
 
   // Check for pending meals from recommendations
   useEffect(() => {
@@ -39,8 +40,6 @@ const MealLog = () => {
             meal: meal.name,
             quantity: 1,
             unit: 'cup',
-            time_of_day: '',
-            ml_prediction: null,
             showDropdown: false
           }
         ]
@@ -69,39 +68,21 @@ const MealLog = () => {
   }, []);
 
   const [formData, setFormData] = useState({
-    fastingSugar: '',
+    preMealSugar: '',
     postMealSugar: '',
+    timeOfDay: 'Breakfast (7-9 AM)', // Move time of day to be global for the entire meal log
     notes: '',
     meals_taken: [
       {
         meal: '',
-        quantity: '',
+        quantity: 1, // Default to 1 instead of empty string
         unit: 'cup',
-        time_of_day: '',
         showDropdown: false,
       }
     ]
   });
   const [isLoading, setIsLoading] = useState(false);
   const [prediction, setPrediction] = useState(null);
-
-  // Save log to Firestore
-  const saveLog = async (inputData, result) => {
-    try {
-      const user = auth.currentUser;
-      await saveMealLog({
-        userId: user?.uid || "guest",
-        sugar_level_fasting: inputData.fastingSugar,
-        sugar_level_post: inputData.postMealSugar,
-        meals_taken: inputData.meals_taken,
-        notes: inputData.notes,
-        ...result,
-        createdAt: new Date()
-      });
-    } catch (error) {
-      console.error("Error saving log: ", error);
-    }
-  }
 
   // ...existing code...
 
@@ -158,7 +139,12 @@ const MealLog = () => {
       ...prev,
       meals_taken: [
         ...prev.meals_taken,
-        { meal: '', quantity: '', unit: 'cup', time_of_day: '' }
+        { 
+          meal: '', 
+          quantity: 1, // Default to 1 instead of empty string
+          unit: 'cup', 
+          showDropdown: false
+        }
       ]
     }));
   };
@@ -175,24 +161,51 @@ const MealLog = () => {
   const handleSubmit = async (e) => {
     e.preventDefault();
     setIsLoading(true);
+    
     try {
+      // Validate form data before submission
+      if (!isFormValid()) {
+        throw new Error('Please fill in all required fields with valid values');
+      }
+      
       // Use user profile if available
       const profile = userProfile || {};
       
+      // Get current user ID from Firebase Auth
+      const userId = user?.uid || 'anonymous';
+      
+      // Validate and parse numeric inputs
+      const preMealSugar = parseFloat(formData.preMealSugar);
+      const postMealSugar = parseFloat(formData.postMealSugar);
+      
+      if (isNaN(preMealSugar) || isNaN(postMealSugar)) {
+        throw new Error('Sugar levels must be valid numbers');
+      }
+      
+      // Filter and validate meals
+      const validMeals = formData.meals_taken.filter(meal => 
+        meal.meal && meal.meal.trim() !== '' && 
+        meal.quantity && parseFloat(meal.quantity) > 0
+      );
+      
+      if (validMeals.length === 0) {
+        throw new Error('At least one meal must be properly filled');
+      }
+      
       // Prepare aggregated meal payload for backend
       const aggregatedPayload = {
-        userId: profile.userId || 'anonymous',
+        userId: userId,
         age: parseInt(profile.age) || 35,
         gender: profile.gender || 'Male',
         weight_kg: parseFloat(profile.weight) || 70,
         height_cm: parseFloat(profile.height) || 170,
-        sugar_level_fasting: parseFloat(formData.fastingSugar),
-        sugar_level_post: parseFloat(formData.postMealSugar),
-        meals: formData.meals_taken.filter(meal => meal.meal && meal.meal.trim() !== '').map(meal => ({
-          meal_name: meal.meal,
-          quantity: parseFloat(meal.quantity) || 1,
+        sugar_level_fasting: preMealSugar,
+        sugar_level_post: postMealSugar,
+        meals: validMeals.map(meal => ({
+          meal_name: meal.meal.trim(),
+          quantity: parseFloat(meal.quantity),
           unit: meal.unit || 'piece',
-          time_of_day: meal.time_of_day || 'Breakfast (7-9 AM)'
+          time_of_day: formData.timeOfDay || 'Breakfast (7-9 AM)' // Use the global time of day
         })),
         notes: formData.notes || ''
       };
@@ -209,33 +222,35 @@ const MealLog = () => {
         const enhancedPrediction = {
           ...result.prediction,
           aggregated_nutrition: result.aggregated_nutrition,
-          meal_combination: result.aggregated_nutrition.meal_names.join(', '),
-          total_calories: result.aggregated_nutrition.calories,
-          total_glycemic_load: result.aggregated_nutrition.glycemic_load
+          meal_combination: result.aggregated_nutrition?.meal_names?.join(', ') || 'Multiple meals',
+          total_calories: result.aggregated_nutrition?.calories || 0,
+          total_glycemic_load: result.aggregated_nutrition?.glycemic_load || 0
         };
         
         setPrediction(enhancedPrediction);
         
         // Reset form after successful submission
         setFormData({
-          fastingSugar: '',
+          preMealSugar: '',
           postMealSugar: '',
-          meals_taken: [{ meal: '', quantity: 1, unit: 'piece', time_of_day: 'Breakfast (7-9 AM)', showDropdown: false }],
+          timeOfDay: 'Breakfast (7-9 AM)',
+          meals_taken: [{ meal: '', quantity: 1, unit: 'cup', showDropdown: false }],
           notes: ''
         });
         
       } else {
-        throw new Error('Failed to log meal and get prediction');
+        throw new Error(result.message || 'Failed to log meal and get prediction');
       }
 
     } catch (err) {
       console.error('Prediction or log error:', err);
       setPrediction({
         error: true,
-        message: 'Error analyzing meal. Please try again.',
+        message: err.message || 'Error analyzing meal. Please try again.',
         recommendations: [
           { name: 'Check your internet connection', reason: '' },
-          { name: 'Verify all meal names are correct', reason: '' }
+          { name: 'Verify all meal names are correct', reason: '' },
+          { name: 'Ensure sugar levels are within valid ranges (50-400 mg/dL fasting, 50-600 mg/dL post-meal)', reason: '' }
         ]
       });
     } finally {
@@ -245,8 +260,59 @@ const MealLog = () => {
 
   // ...existing code...
 
-  // Add isFormValid for form validation
-  const isFormValid = formData.fastingSugar && formData.postMealSugar && formData.meals_taken.every(m => m.meal && m.quantity && m.unit && m.time_of_day);
+  // Add isFormValid for form validation with proper checks
+  const isFormValid = () => {
+    // Check required fields
+    if (!formData.preMealSugar || !formData.postMealSugar || !formData.timeOfDay) return false;
+    
+    // Validate sugar level ranges
+    const preMealSugar = parseFloat(formData.preMealSugar);
+    const postMealSugar = parseFloat(formData.postMealSugar);
+    
+    if (isNaN(preMealSugar) || preMealSugar < 50 || preMealSugar > 400) return false;
+    if (isNaN(postMealSugar) || postMealSugar < 50 || postMealSugar > 600) return false;
+    
+    // Check if at least one meal is properly filled
+    const validMeals = formData.meals_taken.filter(meal => 
+      meal.meal && meal.meal.trim() !== '' && 
+      meal.quantity && parseFloat(meal.quantity) > 0 &&
+      meal.unit
+    );
+    
+    return validMeals.length > 0;
+  };
+
+  // Show loading while authentication is being determined
+  if (authLoading) {
+    return (
+      <div className="min-h-screen bg-primary-50 dark:bg-gray-900 py-12 transition-all duration-300">
+        <div className="max-w-4xl mx-auto px-4 sm:px-6 lg:px-8">
+          <div className="text-center">
+            <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-primary-600 mx-auto"></div>
+            <p className="mt-4 text-neutral-600 dark:text-neutral-300">Loading...</p>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  // Show login message if not authenticated
+  if (!user) {
+    return (
+      <div className="min-h-screen bg-primary-50 dark:bg-gray-900 py-12 transition-all duration-300">
+        <div className="max-w-4xl mx-auto px-4 sm:px-6 lg:px-8">
+          <div className="text-center">
+            <h1 className="text-3xl font-bold text-primary-700 dark:text-primary-400 mb-4">
+              Please Log In
+            </h1>
+            <p className="text-lg text-neutral-600 dark:text-neutral-300">
+              You need to be logged in to log your meals.
+            </p>
+          </div>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="min-h-screen bg-primary-50 dark:bg-gray-900 py-12 transition-all duration-300">
@@ -273,10 +339,10 @@ const MealLog = () => {
               </h2>
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-6">
                 <div>
-                  <label htmlFor="fastingSugar" className="block text-sm font-medium dark:text-white">Fasting Sugar (mg/dL)</label>
-                  <input type="number" id="fastingSugar" name="fastingSugar"
-                    value={formData.fastingSugar} onChange={handleInputChange}
-                    className="block w-full px-4 py-3 border rounded-xl dark:bg-gray-900 dark:text-white placeholder:text-gray-400 placeholder:dark:text-gray-500 mt-2" required placeholder="Fasting Sugar (mg/dL)" />
+                  <label htmlFor="preMealSugar" className="block text-sm font-medium dark:text-white">Pre-Meal Sugar (mg/dL)</label>
+                  <input type="number" id="preMealSugar" name="preMealSugar"
+                    value={formData.preMealSugar} onChange={handleInputChange}
+                    className="block w-full px-4 py-3 border rounded-xl dark:bg-gray-900 dark:text-white placeholder:text-gray-400 placeholder:dark:text-gray-500 mt-2" required placeholder="Pre-Meal Sugar (mg/dL)" />
                 </div>
                 <div>
                   <label htmlFor="postMealSugar" className="block text-sm font-medium dark:text-white">Post-Meal Sugar (mg/dL)</label>
@@ -287,13 +353,40 @@ const MealLog = () => {
               </div>
             </div>
 
+            {/* Time of Day - Single selection for the entire meal log */}
+            <div className="space-y-6">
+              <h2 className="text-xl font-semibold text-neutral-900 dark:text-white border-b border-neutral-200 dark:border-neutral-600 pb-2 flex items-center">
+                <CakeIcon className="h-6 w-6 mr-2 text-primary-600 dark:text-primary-400" />
+                Time of Day
+              </h2>
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-6">
+                <div>
+                  <label htmlFor="timeOfDay" className="block text-sm font-medium dark:text-white">When are you eating this meal?</label>
+                  <select 
+                    id="timeOfDay" 
+                    name="timeOfDay"
+                    value={formData.timeOfDay} 
+                    onChange={handleInputChange}
+                    className="block w-full px-4 py-3 border rounded-xl dark:bg-gray-900 dark:text-white placeholder:text-gray-400 placeholder:dark:text-gray-500 mt-2" 
+                    required
+                  >
+                    {timeOptions.map(time => (
+                      <option key={time} value={time} className="dark:text-white">
+                        {time}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+              </div>
+            </div>
+
             {/* Meal Information */}
             <div className="space-y-6">
               <h2 className="text-xl font-semibold flex items-center">
                 <CakeIcon className="h-6 w-6 mr-2 text-primary-600" /> <span className="dark:text-white">Meal Information</span>
               </h2>
               {formData.meals_taken.map((meal, idx) => (
-                <div key={idx} className="grid grid-cols-1 sm:grid-cols-4 gap-4 mb-4">
+                <div key={idx} className="grid grid-cols-1 sm:grid-cols-3 gap-4 mb-4">
                   <div>
                     <label className="block text-sm font-medium dark:text-white">Meal</label>
                     <div className="relative">
@@ -336,16 +429,10 @@ const MealLog = () => {
                       {portionUnits.map(unit => <option key={unit.value} value={unit.value} className="dark:text-white">{unit.label}</option>)}
                     </select>
                   </div>
-                  <div>
-                    <label className="block text-sm font-medium dark:text-white">Time of Day</label>
-                    <select value={meal.time_of_day} onChange={e => handleMealChange(idx, 'time_of_day', e.target.value)}
-                      className="block w-full px-4 py-3 border rounded-xl dark:bg-gray-900 dark:text-white placeholder:text-gray-400 placeholder:dark:text-gray-500 mt-2" required>
-                      <option value="" className="dark:text-white">Select time of day</option>
-                      {timeOptions.map(time => <option key={time} value={time} className="dark:text-white">{time}</option>)}
-                    </select>
-                  </div>
                   {formData.meals_taken.length > 1 && (
-                    <button type="button" onClick={() => removeMeal(idx)} className="text-danger-600 dark:text-danger-400 text-xs mt-2">Remove</button>
+                    <div className="sm:col-span-3 flex justify-end">
+                      <button type="button" onClick={() => removeMeal(idx)} className="text-danger-600 dark:text-danger-400 text-sm px-3 py-1 rounded-lg hover:bg-danger-50 dark:hover:bg-danger-900/20">Remove</button>
+                    </div>
                   )}
                 </div>
               ))}
@@ -360,23 +447,71 @@ const MealLog = () => {
 
             {/* Prediction */}
             {prediction && (
-              <div className={`border rounded-xl p-6 ${prediction.color}`}>
-                <h3 className="font-semibold mb-2 text-white">AI Health Assessment</h3>
-                <p className="text-sm mb-4 text-white">{prediction.message}</p>
-                <ul className="text-sm list-disc pl-5 text-white">
-                  {prediction.recommendations.map((rec, idx) => (
-                    <li key={idx}>
-                      {rec.name ? <strong>{rec.name}: </strong> : null}
-                      {rec.reason || rec}
-                    </li>
-                  ))}
-                </ul>
+              <div className={`border rounded-xl p-6 ${
+                prediction.error ? 'bg-red-500' :
+                (prediction.risk_assessment?.risk_level === 'high' || prediction.risk_level === 'high') ? 'bg-red-500' :
+                (prediction.risk_assessment?.risk_level === 'medium' || prediction.risk_assessment?.risk_level === 'low-medium' || 
+                 prediction.risk_level === 'medium' || prediction.risk_level === 'low-medium') ? 'bg-yellow-500' :
+                'bg-green-500'
+              }`}>
+                <h3 className="font-semibold mb-2 text-white">
+                  {prediction.error ? 'Analysis Error' : 'AI Health Assessment - Aggregated Meal Analysis'}
+                </h3>
+                
+                {prediction.error ? (
+                  <p className="text-sm mb-4 text-white">Error analyzing meal. Please try again.</p>
+                ) : (
+                  <>
+                    <p className="text-sm mb-4 text-white">{prediction.message}</p>
+                    
+                    {/* Aggregated Nutrition Summary */}
+                    {prediction.aggregated_nutrition && (
+                      <div className="bg-white/20 rounded-lg p-4 mb-4">
+                        <h4 className="font-medium text-white mb-2">Meal Combination Summary:</h4>
+                        <div className="grid grid-cols-2 gap-2 text-sm text-white">
+                          <div>Total Calories: {prediction.total_calories?.toFixed(0) || 'N/A'} kcal</div>
+                          <div>Total Carbs: {prediction.aggregated_nutrition.carbs_g?.toFixed(1) || 'N/A'} g</div>
+                          <div>Glycemic Load: {prediction.total_glycemic_load?.toFixed(1) || 'N/A'}</div>
+                          <div>Protein: {prediction.aggregated_nutrition.protein_g?.toFixed(1) || 'N/A'} g</div>
+                        </div>
+                        {prediction.meal_combination && (
+                          <p className="text-xs text-white/80 mt-2">Foods analyzed: {prediction.meal_combination}</p>
+                        )}
+                      </div>
+                    )}
+                  </>
+                )}
+
+                <div className="mb-4">
+                  <h4 className="font-medium text-white mb-2">Recommendations for this meal combination:</h4>
+                  <ul className="text-sm list-disc pl-5 text-white">
+                    {prediction.recommendations?.map((rec, idx) => (
+                      <li key={idx}>
+                        {typeof rec === 'object' && rec.name ? (
+                          <>
+                            <strong>{rec.name}: </strong>
+                            {rec.reason || 'No additional details'}
+                          </>
+                        ) : (
+                          typeof rec === 'string' ? rec : 'Invalid recommendation format'
+                        )}
+                      </li>
+                    )) || [
+                      <li key="default1">Check your internet connection</li>,
+                      <li key="default2">Verify all meal names are correct</li>
+                    ]}
+                  </ul>
+                </div>
               </div>
             )}
 
             {/* Submit */}
-            <button type="submit" disabled={!isFormValid || isLoading}
-              className="w-full flex items-center justify-center px-8 py-4 text-lg font-semibold rounded-xl bg-primary-600 text-white mt-6">
+            <button type="submit" disabled={!isFormValid() || isLoading}
+              className={`w-full flex items-center justify-center px-8 py-4 text-lg font-semibold rounded-xl mt-6 transition-all duration-200 ${
+                isFormValid() && !isLoading
+                  ? 'bg-primary-600 hover:bg-primary-700 text-white'
+                  : 'bg-gray-300 text-gray-500 cursor-not-allowed'
+              }`}>
               {isLoading ? (<><ArrowPathIcon className="h-6 w-6 mr-3 animate-spin" /> Analyzing...</>)
                 : prediction === 'success' ? (<><CheckIcon className="h-6 w-6 mr-3" /> Analysis saved successfully</>)
                 : (<><CloudIcon className="h-6 w-6 mr-3" /> Submit for Analysis</>)}

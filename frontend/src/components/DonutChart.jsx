@@ -27,16 +27,32 @@ const MealRiskDonutChart = ({ data, title = "Recent Meals Analysis", showMealNam
     if (active && payload && payload.length) {
       const data = payload[0].payload;
       return (
-        <div className="bg-white dark:bg-gray-800 p-4 rounded-lg shadow-lg border border-gray-200 dark:border-gray-600">
+        <div className="bg-white dark:bg-gray-800 p-4 rounded-lg shadow-lg border border-gray-200 dark:border-gray-600 max-w-xs">
           <p className="text-gray-900 dark:text-white font-medium">{data.name}</p>
+          <p className="text-sm text-gray-600 dark:text-gray-400">
+            {data.count || data.value} {data.count ? 'meals' : 'entries'}
+          </p>
           {showMealNames && data.risk && (
             <p className="text-sm text-gray-600 dark:text-gray-400 capitalize">
-              {data.risk} Risk
+              Risk Level: {data.risk}
             </p>
           )}
+          {data.meals && data.meals.length > 0 && (
+            <div className="mt-2">
+              <p className="text-xs text-gray-500 dark:text-gray-400 font-medium">Recent meals:</p>
+              <ul className="text-xs text-gray-600 dark:text-gray-300 mt-1">
+                {data.meals.slice(0, 3).map((meal, idx) => (
+                  <li key={idx} className="truncate">• {meal}</li>
+                ))}
+                {data.meals.length > 3 && (
+                  <li className="text-gray-400">... and {data.meals.length - 3} more</li>
+                )}
+              </ul>
+            </div>
+          )}
           {data.postMeal && (
-            <p className="text-sm text-gray-600 dark:text-gray-400">
-              Post-meal: {data.postMeal} mg/dL
+            <p className="text-sm text-gray-600 dark:text-gray-400 mt-1">
+              Avg Post-meal: {data.postMeal} mg/dL
             </p>
           )}
         </div>

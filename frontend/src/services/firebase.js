@@ -46,7 +46,23 @@ export const updateMealLogAnalysis = async (userId, logId, analysis) => {
 
 export const saveUserProfile = async (userId, profileData) => {
     try {
-        await setDoc(doc(db, `users/${userId}/profile`, "main"), profileData);
+        // Check if profile is complete - use the correct field names
+        const isProfileComplete = !!(
+            (profileData.fullName || profileData.name) && 
+            profileData.email && 
+            profileData.age && 
+            profileData.gender && 
+            profileData.height && 
+            profileData.weight
+        );
+        
+        const completeProfileData = {
+            ...profileData,
+            profileComplete: isProfileComplete,
+            updatedAt: new Date().toISOString()
+        };
+        
+        await setDoc(doc(db, `users/${userId}/profile`, "main"), completeProfileData);
     } catch (error) {
         console.error("Error saving user profile:", error);
         throw error;
@@ -58,7 +74,29 @@ export const fetchUserProfile = async (userId) => {
         const profileDoc = await doc(db, `users/${userId}/profile`, "main");
         const snapshot = await getDoc(profileDoc);
         if (snapshot.exists()) {
-            return snapshot.data();
+            const profileData = snapshot.data();
+            
+            // Check if we need to update the profileComplete status
+            const shouldBeComplete = !!(
+                (profileData.fullName || profileData.name) && 
+                profileData.email && 
+                profileData.age && 
+                profileData.gender && 
+                profileData.height && 
+                profileData.weight
+            );
+            
+            // If the completion status is incorrect, update it
+            if (profileData.profileComplete !== shouldBeComplete) {
+                console.log('Updating profile completion status...');
+                await updateDoc(profileDoc, { 
+                    profileComplete: shouldBeComplete,
+                    updatedAt: new Date().toISOString()
+                });
+                return { ...profileData, profileComplete: shouldBeComplete };
+            }
+            
+            return profileData;
         } else {
             return null;
         }
