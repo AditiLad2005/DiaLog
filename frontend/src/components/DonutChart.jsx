@@ -2,10 +2,10 @@ import React from 'react';
 import { PieChart, Pie, Cell, Tooltip, Legend, ResponsiveContainer } from 'recharts';
 
 const MealRiskDonutChart = ({ data, title = "Recent Meals Analysis", showMealNames = false }) => {
-  // Sample data if none provided
+  // Sample data if none provided - STANDARDIZED LABELS
   const defaultData = [
     { name: 'Low Risk', value: 65, count: 13, color: '#10b981' },
-    { name: 'Medium Risk', value: 25, count: 5, color: '#f59e0b' },
+    { name: 'Moderate Risk', value: 25, count: 5, color: '#f59e0b' },
     { name: 'High Risk', value: 10, count: 2, color: '#ef4444' }
   ];
 
@@ -14,12 +14,12 @@ const MealRiskDonutChart = ({ data, title = "Recent Meals Analysis", showMealNam
   console.log('DonutChart received data:', data); // Debug log
   console.log('Using chartData:', chartData); // Debug log
 
-  // Get risk-based color
+  // Get risk-based color - STANDARDIZED LABELS
   const getRiskColor = (risk) => {
     const riskLower = risk?.toLowerCase() || 'unknown';
-    if (riskLower === 'high') return '#ef4444';
-    if (riskLower === 'medium') return '#f59e0b';
-    if (riskLower === 'low') return '#10b981';
+    if (riskLower === 'high') return '#ef4444';      // danger-500
+    if (riskLower === 'moderate') return '#f59e0b';  // warning-500 - STANDARDIZED
+    if (riskLower === 'low') return '#10b981';       // success-500
     return '#6b7280'; // gray for unknown
   };
 

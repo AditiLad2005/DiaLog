@@ -450,8 +450,8 @@ const MealLog = () => {
               <div className={`border rounded-xl p-6 ${
                 prediction.error ? 'bg-red-500' :
                 (prediction.risk_assessment?.risk_level === 'high' || prediction.risk_level === 'high') ? 'bg-red-500' :
-                (prediction.risk_assessment?.risk_level === 'medium' || prediction.risk_assessment?.risk_level === 'low-medium' || 
-                 prediction.risk_level === 'medium' || prediction.risk_level === 'low-medium') ? 'bg-yellow-500' :
+                (prediction.risk_assessment?.risk_level === 'moderate' || 
+                 prediction.risk_level === 'moderate') ? 'bg-yellow-500' :
                 'bg-green-500'
               }`}>
                 <h3 className="font-semibold mb-2 text-white">

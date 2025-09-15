@@ -36,7 +36,39 @@ const Dashboard = () => {
   const [selectedMeal, setSelectedMeal] = useState(null);
   const [selectedRiskLevel, setSelectedRiskLevel] = useState('low');
 
-  // Centralized risk assessment function - used by both meal cards and donut chart
+  // CONSISTENT COLOR SCHEME - Used by both meal cards and donut chart
+  const getRiskColors = (risk) => {
+    const riskLower = risk?.toLowerCase() || 'unknown';
+    switch (riskLower) {
+      case 'high':
+        return {
+          main: '#ef4444',          // danger-500
+          background: '#ef4444',    // danger-500 (same for consistency)
+          border: '#dc2626',        // danger-600
+          text: 'white',
+          icon: 'white'
+        };
+      case 'moderate':              // STANDARDIZED: use "moderate" not "medium"
+        return {
+          main: '#f59e0b',          // warning-500
+          background: '#f59e0b',    // warning-500 (same for consistency)
+          border: '#d97706',        // warning-600
+          text: 'white',
+          icon: 'white'
+        };
+      case 'low':
+      default:
+        return {
+          main: '#10b981',          // success-500
+          background: '#10b981',    // success-500 (same for consistency)
+          border: '#059669',        // success-600
+          text: 'white',
+          icon: 'white'
+        };
+    }
+  };
+
+  // SINGLE SOURCE OF TRUTH: Use AI risk level stored in Firebase
   const assessRisk = (log) => {
     const mealName = Array.isArray(log.meals_taken) && log.meals_taken.length > 0 
       ? log.meals_taken[0].meal 
@@ -44,183 +76,45 @@ const Dashboard = () => {
     
     console.log('=== ASSESSING RISK FOR:', mealName, '===');
     console.log('Full log object:', log);
-    console.log('Prediction object:', log.prediction);
     
-    // CRITICAL SAFETY CHECKS FIRST - Override everything for extreme values
-    const postMeal = parseFloat(log.sugar_level_post || log.postMealSugar || 0);
+    // Special debug for specific meals
+    if (mealName.toLowerCase().includes('chicken sandwich') || mealName.toLowerCase().includes('butter chicken')) {
+      console.log('🔍 DEBUGGING MEAL:', mealName);
+      console.log('- Full log data:', JSON.stringify(log, null, 2));
+      console.log('- ai_risk_level field:', log.ai_risk_level);
+      console.log('- prediction structure:', JSON.stringify(log.prediction, null, 2));
+    }
     
-    // Check for extreme nutritional values that are always high risk
-    // Check multiple possible locations for nutritional data
-    const totalCalories = log.prediction?.aggregated_nutrition?.calories || 
-                         log.prediction?.total_calories || 
-                         log.prediction?.calories ||
-                         log.aggregated_nutrition?.calories ||
-                         log.total_calories ||
-                         log.calories || 0;
-                         
-    const totalCarbs = log.prediction?.aggregated_nutrition?.carbs || 
-                      log.prediction?.total_carbs || 
-                      log.prediction?.carbs ||
-                      log.aggregated_nutrition?.carbs ||
-                      log.total_carbs ||
-                      log.carbs || 0;
-                      
-    const glycemicLoad = log.prediction?.aggregated_nutrition?.glycemic_load || 
-                        log.prediction?.total_glycemic_load || 
-                        log.prediction?.glycemic_load ||
-                        log.aggregated_nutrition?.glycemic_load ||
-                        log.total_glycemic_load ||
-                        log.glycemic_load || 0;
-    
-    console.log('Raw prediction object structure:');
-    console.log('log.prediction:', log.prediction);
-    console.log('Checking all possible data sources...');
-    
-    console.log('Nutritional values:', { totalCalories, totalCarbs, glycemicLoad, postMeal });
-    
-    // Also check if nutritional values are mentioned in AI text
-    let textBasedCalories = 0, textBasedCarbs = 0, textBasedGlycemic = 0;
-    if (log.prediction?.recommendations) {
-      const recText = JSON.stringify(log.prediction.recommendations);
-      console.log('AI recommendation text:', recText);
+    // PRIORITY 1: Use stored AI risk level from Firebase (single source of truth)
+    if (log.ai_risk_level) {
+      const storedRisk = log.ai_risk_level.toLowerCase();
+      console.log('✅ Using stored AI risk level from Firebase:', storedRisk);
       
-      // Look for calorie mentions like "6753 kcal" or "6753 calories"
-      const calorieMatch = recText.match(/(\d+)\s*(kcal|calories)/i);
-      if (calorieMatch) {
-        textBasedCalories = parseInt(calorieMatch[1]);
-        console.log('Found calories in AI text:', textBasedCalories);
-      }
-      
-      // Look for carb mentions like "585.6 g" or "585.6g" 
-      const carbMatch = recText.match(/carbs?:\s*(\d+(?:\.\d+)?)\s*g/i);
-      if (carbMatch) {
-        textBasedCarbs = parseFloat(carbMatch[1]);
-        console.log('Found carbs in AI text:', textBasedCarbs);
-      }
-      
-      // Look for glycemic load mentions like "286.9"
-      const glycemicMatch = recText.match(/glycemic\s+load:?\s*(\d+(?:\.\d+)?)/i);
-      if (glycemicMatch) {
-        textBasedGlycemic = parseFloat(glycemicMatch[1]);
-        console.log('Found glycemic load in AI text:', textBasedGlycemic);
-      }
-      
-      // CRITICAL: Check if AI explicitly says "High risk meal"
-      if (recText.toLowerCase().includes('high risk meal') || 
-          recText.toLowerCase().includes('high-risk meal') ||
-          recText.toLowerCase().includes('unsafe meal') ||
-          recText.toLowerCase().includes('dangerous meal')) {
-        console.log('🚨 AI EXPLICITLY STATES HIGH RISK - OVERRIDING ALL OTHER LOGIC');
-        return 'high';
-      }
+      // Parse the stored format: "low risk" -> "low", "moderate risk" -> "moderate", etc.
+      if (storedRisk.includes('high')) return 'high';
+      if (storedRisk.includes('moderate')) return 'moderate';
+      if (storedRisk.includes('low')) return 'low';
     }
     
-    // Check aggregated_nutrition field specifically
-    if (log.prediction?.aggregated_nutrition) {
-      const aggNutr = log.prediction.aggregated_nutrition;
-      console.log('Found aggregated_nutrition:', aggNutr);
-      if (aggNutr.calories) textBasedCalories = Math.max(textBasedCalories, aggNutr.calories);
-      if (aggNutr.carbs) textBasedCarbs = Math.max(textBasedCarbs, aggNutr.carbs);
-      if (aggNutr.glycemic_load) textBasedGlycemic = Math.max(textBasedGlycemic, aggNutr.glycemic_load);
-    }
-    
-    // Use the highest values found from either structured data or text
-    const finalCalories = Math.max(totalCalories, textBasedCalories);
-    const finalCarbs = Math.max(totalCarbs, textBasedCarbs);
-    const finalGlycemic = Math.max(glycemicLoad, textBasedGlycemic);
-    
-    console.log('Final nutritional values:', { finalCalories, finalCarbs, finalGlycemic, glycemicLoad, postMeal });
-    
-    // SAFETY OVERRIDE: Extreme values are ALWAYS high risk (with lower thresholds for safety)
-    if (finalCalories > 1500 || finalCarbs > 100 || finalGlycemic > 30 || glycemicLoad > 30 || postMeal > 200) {
-      console.log('🚨 SAFETY OVERRIDE: Extreme nutritional values detected - HIGH RISK');
-      console.log('Triggered by:', {
-        calories: finalCalories > 1500 ? `${finalCalories} > 1500` : null,
-        carbs: finalCarbs > 100 ? `${finalCarbs}g > 100g` : null,
-        glycemicLoadText: finalGlycemic > 30 ? `${finalGlycemic} > 30` : null,
-        glycemicLoadStruct: glycemicLoad > 30 ? `${glycemicLoad} > 30` : null,
-        bloodSugar: postMeal > 200 ? `${postMeal} > 200` : null
-      });
-      return 'high';
-    }
-    
-    // Priority 1: Check AI risk assessment in all possible formats
-    let aiRisk = '';
-    if (log.riskLevel && log.riskLevel.trim()) {
-      aiRisk = log.riskLevel.toLowerCase();
-      console.log('Found direct riskLevel:', aiRisk);
-    }
-    else if (log.prediction?.risk_assessment?.risk_level) {
-      aiRisk = log.prediction.risk_assessment.risk_level.toLowerCase();
-      console.log('Found prediction.risk_assessment.risk_level:', aiRisk);
-    }
-    else if (log.prediction?.risk_level) {
-      aiRisk = log.prediction.risk_level.toLowerCase();
-      console.log('Found prediction.risk_level:', aiRisk);
-    }
-    else if (log.prediction?.risk) {
-      aiRisk = log.prediction.risk.toLowerCase();
-      console.log('Found prediction.risk:', aiRisk);
-    }
-    else if (log.prediction?.recommendations && log.prediction.recommendations[0]?.risk_level) {
-      aiRisk = log.prediction.recommendations[0].risk_level.toLowerCase();
-      console.log('Found prediction.recommendations[0].risk_level:', aiRisk);
-    }
-    
-    // Check if AI analysis mentions high risk in text
-    if (log.prediction?.recommendations) {
-      const recText = JSON.stringify(log.prediction.recommendations).toLowerCase();
-      if (recText.includes('high risk') || recText.includes('unsafe') || recText.includes('dangerous')) {
-        console.log('🚨 AI text analysis indicates HIGH RISK');
-        aiRisk = 'high';
-      }
-    }
-    
-    // Normalize AI risk levels
-    if (aiRisk === 'low-medium') aiRisk = 'medium';
-    
-    if (aiRisk) {
-      console.log('✅ Using AI risk assessment:', aiRisk);
+    // FALLBACK: Try to extract from prediction object (for backward compatibility)
+    if (log.prediction?.risk_assessment?.risk_level) {
+      const aiRisk = log.prediction.risk_assessment.risk_level.toLowerCase();
+      console.log('📋 Using prediction.risk_assessment.risk_level:', aiRisk);
       return aiRisk;
     }
     
-    // Priority 2: Blood sugar levels
+    // FALLBACK: Blood sugar levels (for very old data)
+    const postMeal = parseFloat(log.sugar_level_post || log.postMealSugar || 0);
     if (postMeal > 200) {
-      console.log('Blood sugar > 200 - HIGH RISK');
+      console.log('🩸 Blood sugar > 200 - HIGH RISK');
       return 'high';
     } else if (postMeal >= 140) {
-      console.log('Blood sugar 140-200 - MEDIUM RISK');
-      return 'medium';
+      console.log('🩸 Blood sugar 140-200 - MODERATE RISK');
+      return 'moderate';
     }
     
-    // Priority 3: Keyword fallback ONLY if no prediction at all
-    if (!log.prediction) {
-      const foodLower = mealName.toLowerCase();
-      console.log('No AI prediction found, using keyword fallback for:', mealName);
-      
-      // High risk food keywords
-      if (foodLower.includes('sweet') || foodLower.includes('dessert') || 
-          foodLower.includes('cake') || foodLower.includes('sugar') || 
-          foodLower.includes('ice cream') || foodLower.includes('chocolate') ||
-          foodLower.includes('milkshake') || foodLower.includes('cream') ||
-          foodLower.includes('pancake') || foodLower.includes('candy') ||
-          foodLower.includes('halwa') || foodLower.includes('laddu') ||
-          foodLower.includes('jalebi') || foodLower.includes('gulab jamun')) {
-        console.log('Keyword assessment: HIGH RISK');
-        return 'high';
-      }
-      // Medium risk food keywords
-      else if (foodLower.includes('rice') || foodLower.includes('bread') || 
-               foodLower.includes('pasta') || foodLower.includes('fried') || 
-               foodLower.includes('potato') || foodLower.includes('noodles') ||
-               foodLower.includes('mango')) {
-        console.log('Keyword assessment: MEDIUM RISK');
-        return 'medium';
-      }
-    }
-    
-    // Default: Low risk (but log this decision)
-    console.log('Defaulting to LOW RISK');
+    // Default: Low risk
+    console.log('⚪ Defaulting to LOW RISK');
     return 'low';
   };
 
@@ -422,15 +316,15 @@ const Dashboard = () => {
             value: 1, // Each meal is 1 unit
             risk: risk,
             postMeal: postMeal,
-            color: risk === 'high' ? '#ef4444' : risk === 'medium' ? '#f59e0b' : '#10b981'
+            color: risk === 'high' ? '#ef4444' : risk === 'moderate' ? '#f59e0b' : '#10b981'
           };
         });
 
         console.log('Meal Data Array:', mealDataArray); // Debug log
         
-        // Risk summary data with meal details
+        // Risk summary data with meal details - STANDARDIZED LABELS
         const lowRiskLogs = logs.filter(l => getRisk(l) === 'low');
-        const mediumRiskLogs = logs.filter(l => getRisk(l) === 'medium');
+        const moderateRiskLogs = logs.filter(l => getRisk(l) === 'moderate');
         const highRiskLogs = logs.filter(l => getRisk(l) === 'high');
         
         const riskDataArray = [
@@ -449,11 +343,11 @@ const Dashboard = () => {
             })
           },
           { 
-            name: 'Medium Risk', 
-            value: mediumRiskLogs.length, 
-            count: mediumRiskLogs.length, 
+            name: 'Moderate Risk', 
+            value: moderateRiskLogs.length, 
+            count: moderateRiskLogs.length, 
             color: '#f59e0b',
-            meals: mediumRiskLogs.map(log => {
+            meals: moderateRiskLogs.map(log => {
               if (Array.isArray(log.meals_taken) && log.meals_taken.length > 0) {
                 return log.meals_taken[0].meal;
               } else if (Array.isArray(log.meal_names) && log.meal_names.length > 0) {
@@ -729,20 +623,18 @@ const Dashboard = () => {
                     
                     // Get risk level using centralized assessment function
                     const risk = assessRisk(log);
+                    const riskColors = getRiskColors(risk);
+                    
                     return (
                       <div
                         key={log.id}
                         onClick={() => handleMealClick(log)}
-                        className={`
-                          relative p-4 rounded-lg border-2 transition-all duration-200 cursor-pointer
-                          hover:shadow-lg hover:scale-[1.02] transform group
-                          ${risk === 'high' 
-                            ? 'border-danger-600 bg-danger-700 text-white hover:bg-danger-600' 
-                            : risk === 'medium'
-                            ? 'border-warning-200 bg-warning-50 dark:border-warning-700 dark:bg-warning-900/20 hover:bg-warning-100 dark:hover:bg-warning-900/30'
-                            : 'border-success-200 bg-success-50 dark:border-success-700 dark:bg-success-900/20 hover:bg-success-100 dark:hover:bg-success-900/30'
-                          }
-                        `}
+                        className="relative p-4 rounded-lg border-2 transition-all duration-200 cursor-pointer hover:shadow-lg hover:scale-[1.02] transform group"
+                        style={{
+                          backgroundColor: riskColors.background,
+                          borderColor: riskColors.border,
+                          color: riskColors.text
+                        }}
                       >
                         {/* Hover indicator */}
                         <div className="absolute top-2 right-2 opacity-0 group-hover:opacity-100 transition-opacity duration-200">
@@ -753,32 +645,27 @@ const Dashboard = () => {
                         </div>
                         <div className="flex items-center justify-between">
                           <div className="flex items-center space-x-4">
-                            {risk !== 'high' && (
-                              <div className={`
-                                p-2 rounded-full
-                                ${risk === 'medium' ? 'bg-warning-200 dark:bg-warning-800' : 'bg-success-200 dark:bg-success-800'}
-                              `}>
-                                {risk === 'medium' ? (
-                                  <ExclamationTriangleIcon className="h-5 w-5 text-warning-600 dark:text-warning-400" />
-                                ) : (
-                                  <CheckCircleIcon className="h-5 w-5 text-success-600 dark:text-success-400" />
-                                )}
-                              </div>
-                            )}
+                            <div className="flex items-center space-x-2">
+                              {risk === 'moderate' ? (
+                                <ExclamationTriangleIcon className="h-5 w-5" style={{ color: riskColors.icon }} />
+                              ) : risk === 'low' ? (
+                                <CheckCircleIcon className="h-5 w-5" style={{ color: riskColors.icon }} />
+                              ) : null}
+                            </div>
                             <div>
-                              <h3 className={`font-semibold ${risk === 'high' ? 'text-white' : 'text-gray-900 dark:text-white'}`}>{mealName || '-'}</h3>
-                              <p className={`text-sm ${risk === 'high' ? 'text-white' : 'text-gray-600 dark:text-gray-400'}`}>{createdAt} {time ? `• ${time}` : ''}</p>
+                              <h3 className="font-semibold" style={{ color: riskColors.text }}>{mealName || '-'}</h3>
+                              <p className="text-sm opacity-90" style={{ color: riskColors.text }}>{createdAt} {time ? `• ${time}` : ''}</p>
                             </div>
                           </div>
                           <div className="text-right">
                             <div className="flex space-x-4 text-sm">
                               <div>
-                                <p className={`text-gray-600 dark:text-gray-400 ${risk === 'high' ? 'text-white' : ''}`}>Fasting</p>
-                                <p className={`font-semibold ${risk === 'high' ? 'text-white' : 'text-gray-900 dark:text-white'}`}>{fasting ? `${fasting} mg/dL` : '-'}</p>
+                                <p className="opacity-75" style={{ color: riskColors.text }}>Fasting</p>
+                                <p className="font-semibold" style={{ color: riskColors.text }}>{fasting ? `${fasting} mg/dL` : '-'}</p>
                               </div>
                               <div>
-                                <p className={`text-gray-600 dark:text-gray-400 ${risk === 'high' ? 'text-white' : ''}`}>Post-Meal</p>
-                                <p className={`font-semibold ${risk === 'high' ? 'text-white' : 'text-gray-900 dark:text-white'}`}>{postMeal ? `${postMeal} mg/dL` : '-'}</p>
+                                <p className="opacity-75" style={{ color: riskColors.text }}>Post-Meal</p>
+                                <p className="font-semibold" style={{ color: riskColors.text }}>{postMeal ? `${postMeal} mg/dL` : '-'}</p>
                               </div>
                             </div>
                           </div>

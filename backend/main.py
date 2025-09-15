@@ -358,15 +358,15 @@ def assess_meal_risk(nutrition: dict, bmi: float, fasting_sugar: float, post_mea
         risk_factors.append("Adequate protein content")
         risk_score -= 0.25
     
-    # Determine overall risk with improved thresholds
+    # Determine overall risk with consistent standard labels
     if risk_score >= 6:
         risk_level = "high"
         recommendation = "High risk meal - consider smaller portions, add protein/fiber, or choose lower-carb alternatives"
     elif risk_score >= 3:
-        risk_level = "medium"
+        risk_level = "moderate"  # Changed from "medium" to "moderate"
         recommendation = "Moderate risk - monitor blood sugar closely and consider pairing with protein/vegetables"
     elif risk_score >= 1:
-        risk_level = "low-medium"
+        risk_level = "moderate"  # Changed from "low-medium" to "moderate" for consistency
         recommendation = "Generally suitable with minor considerations for portion size"
     else:
         risk_level = "low"
@@ -496,8 +496,8 @@ async def predict_aggregated_meal_safety(request: AggregatedMealRequest):
         print(f"Error in predict_aggregated_meal_safety: {str(e)}")
         raise HTTPException(status_code=500, detail=f"Error analyzing meal: {str(e)}")
 
-async def log_meal_to_firestore(meal_log: MealLog):
-    """Log aggregated meal to Firestore"""
+async def log_meal_to_firestore(meal_log: MealLog, prediction_result=None):
+    """Log aggregated meal to Firestore with AI risk assessment"""
     try:
         if not FIREBASE_AVAILABLE or not firebase_initialized:
             print("⚠️ Firebase not available - skipping cloud logging")
@@ -507,7 +507,33 @@ async def log_meal_to_firestore(meal_log: MealLog):
         aggregated_nutrition = calculate_aggregated_nutrition(meal_log.meals)
         bmi = calculate_bmi(meal_log.weight_kg, meal_log.height_cm)
         
-        # Create the meal log document
+        # If no prediction provided, calculate it
+        if prediction_result is None:
+            aggregated_request = AggregatedMealRequest(
+                age=meal_log.age,
+                gender=meal_log.gender,
+                weight_kg=meal_log.weight_kg,
+                height_cm=meal_log.height_cm,
+                fasting_sugar=meal_log.sugar_level_fasting,
+                post_meal_sugar=meal_log.sugar_level_post,
+                meals=meal_log.meals,
+                notes=meal_log.notes
+            )
+            prediction_result = await predict_aggregated_meal_safety(aggregated_request)
+        
+        # Extract risk level from AI analysis for consistent storage
+        risk_level = "low"  # default
+        if prediction_result and hasattr(prediction_result, 'risk_assessment'):
+            ai_risk = prediction_result.risk_assessment.get('risk_level', 'low').lower()
+            # Store with consistent format: "X risk"
+            if ai_risk == 'high':
+                risk_level = "high risk"
+            elif ai_risk == 'moderate':
+                risk_level = "moderate risk"
+            else:
+                risk_level = "low risk"
+        
+        # Create the meal log document with AI risk assessment
         meal_doc = {
             "userId": meal_log.userId,
             "age": meal_log.age,
@@ -522,7 +548,10 @@ async def log_meal_to_firestore(meal_log: MealLog):
             "total_nutrition": aggregated_nutrition,
             "notes": meal_log.notes,
             "createdAt": meal_log.createdAt or datetime.datetime.now().isoformat(),
-            "timestamp": firestore.SERVER_TIMESTAMP
+            "timestamp": firestore.SERVER_TIMESTAMP,
+            # SINGLE SOURCE OF TRUTH FOR RISK LEVEL
+            "ai_risk_level": risk_level,  # "low risk", "moderate risk", "high risk"
+            "prediction": prediction_result.dict() if prediction_result else None
         }
         
         # Store in Firestore under user's collection
@@ -581,8 +610,8 @@ async def log_meal_firestore(meal_log: MealLog):
         # Get prediction
         prediction_result = await predict_aggregated_meal_safety(aggregated_request)
         
-        # Log to Firestore
-        firestore_result = await log_meal_to_firestore(meal_log)
+        # Log to Firestore WITH the AI prediction
+        firestore_result = await log_meal_to_firestore(meal_log, prediction_result)
         
         # Calculate aggregated nutrition for response
         aggregated_nutrition = calculate_aggregated_nutrition(meal_log.meals)
