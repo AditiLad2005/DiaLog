@@ -18,7 +18,7 @@ import MealRiskDonutChart from '../components/DonutChart';
 import HealthPlanModal from '../components/HealthPlanModal';
 
 import { collection, query, orderBy, getDocs } from "firebase/firestore";
-import { db, auth } from "../services/firebase";
+import { db, auth, fetchUserLogs } from "../services/firebase";
 
 const Dashboard = () => {
   const [bloodSugarData, setBloodSugarData] = useState(null);
@@ -34,28 +34,63 @@ const Dashboard = () => {
   const [selectedMeal, setSelectedMeal] = useState(null);
   const [selectedRiskLevel, setSelectedRiskLevel] = useState('low');
 
-  // Fetch logs from Firebase
-  const fetchLogs = async () => {
-    const user = auth.currentUser;
-    if (!user) return [];
-    const userLogsCollection = collection(db, `users/${user.uid}/logs`);
-    const q = query(userLogsCollection, orderBy("createdAt", "desc"));
-    const snap = await getDocs(q);
-    return snap.docs.map(doc => ({ id: doc.id, ...doc.data() }));
-  };
-
   // Load ML data + logs on component mount
   useEffect(() => {
     const loadDashboardData = async () => {
       try {
         setLoading(true);
         setError(null);
-        // Fetch logs from Firestore
+        
+        // Wait for auth state to be determined
+        const user = auth.currentUser;
+        console.log('Current user:', user); // Debug log
+        
+        if (!user) {
+          // Try to wait for auth state
+          const unsubscribe = auth.onAuthStateChanged((authUser) => {
+            if (authUser) {
+              console.log('Auth user found:', authUser.uid); // Debug log
+              loadUserData(authUser.uid);
+            } else {
+              setError('Please log in to view your dashboard.');
+              setLoading(false);
+            }
+            unsubscribe(); // Cleanup
+          });
+          return;
+        }
+        
+        await loadUserData(user.uid);
+      } catch (err) {
+        setError('Error loading dashboard data. Please try again.');
+        console.error('Error loading dashboard data:', err);
+        setLoading(false);
+      }
+    };
+
+    const loadUserData = async (userId) => {
+      try {
+        // Double-check authentication before fetching
+        const currentUser = auth.currentUser;
+        console.log('loadUserData - Current user:', currentUser); // Debug log
+        console.log('loadUserData - User ID:', userId); // Debug log
+        
+        if (!currentUser) {
+          setError('User not authenticated');
+          setLoading(false);
+          return;
+        }
+        
+        // Fetch logs from Firestore using the improved service function
         let logs = [];
         try {
-          logs = await fetchLogs();
+          logs = await fetchUserLogs(userId, 50);
+          console.log('Fetched logs:', logs); // Debug log
         } catch (err) {
-          setError('Error fetching logs from Firestore.');
+          console.error('Firestore fetch error:', err);
+          console.error('Error code:', err.code); // Debug log
+          console.error('Error message:', err.message); // Debug log
+          setError(`Error fetching logs from Firestore: ${err.message}`);
           logs = [];
         }
         setRecentLogs(logs);
@@ -63,24 +98,24 @@ const Dashboard = () => {
         // Aggregate stats from logs
         let fastingSum = 0, postMealSum = 0, riskyMeals = 0;
         logs.forEach(log => {
-          const fasting = parseFloat(log.sugar_level_fasting);
-          const postMeal = parseFloat(log.sugar_level_post);
+          const fasting = parseFloat(log.sugar_level_fasting || log.fastingSugar || 0);
+          const postMeal = parseFloat(log.sugar_level_post || log.postMealSugar || 0);
           fastingSum += isNaN(fasting) ? 0 : fasting;
           postMealSum += isNaN(postMeal) ? 0 : postMeal;
           // Risky meal detection - check multiple sources
           const logRisk = log.riskLevel || log.prediction?.risk_level || log.prediction?.risk || '';
-          if ((postMeal > 180) || (logRisk.toLowerCase() === 'high')) riskyMeals++;
+          if ((postMeal > 180) || (logRisk && logRisk.toLowerCase() === 'high')) riskyMeals++;
         });
         const avgFasting = logs.length ? (fastingSum / logs.length) : 0;
         const avgPostMeal = logs.length ? (postMealSum / logs.length) : 0;
 
         setBloodSugarData({
           data: logs.slice(0, 7).map(log => ({
-            date: log.createdAt?.toDate?.() ? log.createdAt.toDate().toLocaleDateString() : '',
-            time: Array.isArray(log.meals_taken) && log.meals_taken.length > 0 ? log.meals_taken[0].time_of_day : (log.time_of_day || ''),
+            date: log.createdAt ? (log.createdAt instanceof Date ? log.createdAt.toLocaleDateString() : new Date(log.createdAt).toLocaleDateString()) : new Date().toLocaleDateString(),
+            time: Array.isArray(log.meals_taken) && log.meals_taken.length > 0 ? log.meals_taken[0].time_of_day : (log.time_of_day || 'Unknown'),
             fasting: parseFloat(log.sugar_level_fasting || log.fastingSugar || 0),
             postMeal: parseFloat(log.sugar_level_post || log.postMealSugar || 0),
-            prediction: log.prediction?.risk || log.riskLevel || 'unknown',
+            prediction: log.prediction?.risk_level || log.prediction?.risk || log.riskLevel || 'unknown',
           })),
           summary: {
             avgFasting,
@@ -99,14 +134,15 @@ const Dashboard = () => {
           // Fallback: check sugar levels
           const postMeal = parseFloat(l.sugar_level_post || l.postMealSugar || 0);
           if (postMeal > 180) return 'high';
-          return 'unknown';
+          if (postMeal > 140) return 'medium';
+          return 'low';
         };
         
         // Create meal-based data for donut chart
         const mealDataArray = logs.slice(0, 8).map((log, index) => {
           const mealName = Array.isArray(log.meals_taken) && log.meals_taken.length > 0 
             ? log.meals_taken[0].meal 
-            : (log.meal || `Meal ${index + 1}`);
+            : (log.meal_name || log.meal || `Meal ${index + 1}`);
           const risk = getRisk(log);
           const postMeal = parseFloat(log.sugar_level_post || log.postMealSugar || 0);
           return {
@@ -164,13 +200,15 @@ const Dashboard = () => {
           weeklyTrend: '',
           nextModelUpdate: '',
         });
+        
+        setLoading(false);
       } catch (err) {
-        setError('Error loading dashboard data. Please try again.');
-        console.error('Error loading dashboard data:', err);
-      } finally {
+        console.error('Error in loadUserData:', err);
+        setError(`Error processing user data: ${err.message}`);
         setLoading(false);
       }
     };
+
     loadDashboardData();
   }, []);
 
@@ -185,7 +223,7 @@ const Dashboard = () => {
   const handleMealClick = (log) => {
     const mealName = Array.isArray(log.meals_taken) && log.meals_taken.length > 0 
       ? log.meals_taken[0].meal 
-      : (log.meal || 'Unknown Meal');
+      : (log.meal_name || log.meal || 'Unknown Meal');
     
     // Get risk level from various sources or determine from food content
     let risk = log.riskLevel || log.prediction?.risk_level || log.prediction?.risk || 
@@ -216,7 +254,7 @@ const Dashboard = () => {
     
     setSelectedMeal({
       mealName: mealName,
-      timestamp: log.createdAt?.toDate?.() ? log.createdAt.toDate().toLocaleDateString() : '',
+      timestamp: log.createdAt ? (log.createdAt instanceof Date ? log.createdAt.toLocaleDateString() : new Date(log.createdAt).toLocaleDateString()) : new Date().toLocaleDateString(),
       fastingSugar: log.sugar_level_fasting || log.fastingSugar || '',
       postMealSugar: log.sugar_level_post || log.postMealSugar || '',
       timeOfDay: Array.isArray(log.meals_taken) && log.meals_taken.length > 0 

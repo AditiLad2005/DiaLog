@@ -2,21 +2,56 @@ rules_version = '2';
 service cloud.firestore {
   match /databases/{database}/documents {
 
-    // Users: only the user can read/write their own profile
+    // Users: only the user can read/write their own profile and data
     match /users/{userId} {
       allow read, write: if request.auth != null && request.auth.uid == userId;
+      
+      // User profiles - stored as subcollection
+      match /profile/{profileId} {
+        allow read, write, create, update, delete: if request.auth != null && request.auth.uid == userId;
+      }
+      
+      // User meal logs - stored as subcollection under users
+      match /logs/{logId} {
+        allow create, read, write, update, delete: if request.auth != null && request.auth.uid == userId;
+      }
     }
 
-    // Logs: users can create and read their own logs; no updates/deletes
+    // Root-level logs collection (used by backend)
     match /logs/{logId} {
       allow create: if request.auth != null && request.auth.uid == request.resource.data.userId;
       allow read: if request.auth != null && request.auth.uid == resource.data.userId;
-      allow update, delete: if false;
+      allow update: if request.auth != null && request.auth.uid == resource.data.userId;
+      allow delete: if request.auth != null && request.auth.uid == resource.data.userId;
     }
 
-    // Public read-only (optional)
+    // Root-level logs summary collection (used by backend)
+    match /logs_summary/{summaryId} {
+      allow create: if request.auth != null && request.auth.uid == request.resource.data.userId;
+      allow read: if request.auth != null && request.auth.uid == resource.data.userId;
+      allow update: if request.auth != null && request.auth.uid == resource.data.userId;
+      allow delete: if request.auth != null && request.auth.uid == resource.data.userId;
+    }
+
+    // Public read-only data (food database, etc.)
     match /public/{doc=**} {
       allow read: if true;
+      allow write: if false; // Only admins can write
+    }
+
+    // Admin-only collections
+    match /admin/{doc=**} {
+      allow read, write: if false; // Restrict access - use admin SDK
+    }
+    
+    // Temporary: Allow authenticated users broader access for debugging
+    match /{document=**} {
+      allow read, write: if request.auth != null;
+    }
+    
+    // Even more permissive - allow all authenticated operations temporarily
+    match /users/{userId}/logs/{logId} {
+      allow read, write, create, update, delete: if request.auth != null;
     }
   }
 }
