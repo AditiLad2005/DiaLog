@@ -18,7 +18,7 @@ import MealRiskDonutChart from '../components/DonutChart';
 import HealthPlanModal from '../components/HealthPlanModal';
 
 import { collection, query, orderBy, getDocs } from "firebase/firestore";
-import { db, auth, fetchUserLogs } from "../services/firebase";
+import { db, auth, fetchUserLogs, fetchUserProfile } from "../services/firebase";
 
 const Dashboard = () => {
   const [bloodSugarData, setBloodSugarData] = useState(null);
@@ -28,6 +28,7 @@ const Dashboard = () => {
   const [recentLogs, setRecentLogs] = useState([]);
   const [error, setError] = useState(null);
   const [showAllLogs, setShowAllLogs] = useState(false);
+  const [userProfile, setUserProfile] = useState({});
   
   // Health Plan Modal state
   const [isHealthPlanOpen, setIsHealthPlanOpen] = useState(false);
@@ -94,6 +95,17 @@ const Dashboard = () => {
           logs = [];
         }
         setRecentLogs(logs);
+
+        // Fetch user profile for recommendations
+        let profile = {};
+        try {
+          profile = await fetchUserProfile(userId);
+          console.log('Fetched user profile:', profile); // Debug log
+          setUserProfile(profile || {});
+        } catch (err) {
+          console.error('Profile fetch error:', err);
+          setUserProfile({});
+        }
 
         // Aggregate stats from logs
         let fastingSum = 0, postMealSum = 0, riskyMeals = 0;
@@ -632,7 +644,7 @@ const Dashboard = () => {
 
         {/* Smart Meal Recommendations */}
         <div id="meal-recommendations">
-          <SafeMealSuggestions className="mb-8" />
+          <SafeMealSuggestions userProfile={userProfile} className="mb-8" />
         </div>
 
         {/* Coming Soon Section */}
