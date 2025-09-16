@@ -10,106 +10,85 @@ except ImportError:
     FIREBASE_AVAILABLE = False
 
 from pydantic import BaseModel
+from improved_model_system import MealSafetyPredictor, RiskLevel, run_acceptance_tests
+
+# Import personalized ML model
+try:
+    from personalized_ml_model import PersonalizedMealRecommender
+    PERSONALIZED_ML_AVAILABLE = True
+    print("✅ Personalized ML model imported successfully")
+except ImportError as e:
+    print(f"⚠️ Personalized ML model not available: {e}")
+    PersonalizedMealRecommender = None
+    PERSONALIZED_ML_AVAILABLE = False
+
+
+# Pydantic model for meal log
+
+# Accepts a list of meals per log
+class MealLogMeal(BaseModel):
+    meal_name: str
+    quantity: int
+    unit: str
+    time_of_day: str
+
+class MealLog(BaseModel):
+    userId: str
+    sugar_level_fasting: float
+    sugar_level_post: float
+    meals: list[MealLogMeal]
+    createdAt: str = None  # Optional, can be set by backend
+
+
+
+
+# backend/main.py
+
 from fastapi import FastAPI, HTTPException, Query
 from fastapi.middleware.cors import CORSMiddleware
+from pydantic import BaseModel
 import pandas as pd
+import joblib
 import numpy as np
 import os
 from typing import Optional, List, Dict, Any
 from pathlib import Path
 from dotenv import load_dotenv
-import datetime
 
 # Load environment variables
 load_dotenv()
 
-# Pydantic model for meal log
-class MealLogMeal(BaseModel):
-    meal_name: str
-    quantity: float  # Changed from int to float for better precision
-    unit: str
-    time_of_day: str
-    
-    class Config:
-        schema_extra = {
-            "example": {
-                "meal_name": "Rice",
-                "quantity": 1.5,
-                "unit": "cup",
-                "time_of_day": "Breakfast (7-9 AM)"
-            }
-        }
-
-class MealLog(BaseModel):
-    userId: str
-    age: int = 35
-    gender: str = "Male"
-    weight_kg: float = 70
-    height_cm: float = 170
-    sugar_level_fasting: float
-    sugar_level_post: float
-    meals: list[MealLogMeal]
-    notes: str = ""
-    createdAt: str = None
-    
-    class Config:
-        schema_extra = {
-            "example": {
-                "userId": "user123",
-                "age": 35,
-                "gender": "Male", 
-                "weight_kg": 70.0,
-                "height_cm": 170.0,
-                "sugar_level_fasting": 95.0,
-                "sugar_level_post": 140.0,
-                "meals": [
-                    {
-                        "meal_name": "Rice",
-                        "quantity": 1.5,
-                        "unit": "cup",
-                        "time_of_day": "Breakfast (7-9 AM)"
-                    }
-                ],
-                "notes": "Feeling good after meal"
-            }
-        }
-
-class AggregatedMealRequest(BaseModel):
-    age: int
-    gender: str
-    weight_kg: float
-    height_cm: float
-    fasting_sugar: float
-    post_meal_sugar: float
-    meals: list[MealLogMeal]
-    notes: str = ""
-    
-    class Config:
-        schema_extra = {
-            "example": {
-                "age": 35,
-                "gender": "Male",
-                "weight_kg": 70.0,
-                "height_cm": 170.0,
-                "fasting_sugar": 95.0,
-                "post_meal_sugar": 140.0,
-                "meals": [
-                    {
-                        "meal_name": "Rice",
-                        "quantity": 1.5,
-                        "unit": "cup",
-                        "time_of_day": "Breakfast (7-9 AM)"
-                    }
-                ],
-                "notes": "Regular breakfast"
-            }
-        }
-
 # Create FastAPI app
 app = FastAPI(
     title="DiaLog API - Diabetes Meal Safety Predictor",
-    description="DiaLog API for Diabetes Meal Safety Prediction",
-    version="2.0.0"
+    description="""
+    ## DiaLog API for Diabetes Meal Safety Prediction
+
+    This API provides endpoints to:
+    * Predict meal safety for diabetic users
+    * Get nutritional information for foods
+    * Fetch available foods from the database
+    * Check API health and model status
+
+    ### Model Information
+    - Uses Random Forest Classifier trained on food nutritional data
+    - Considers user BMI, sugar levels, and meal timing
+    - Provides confidence scores and recommendations
+
+    ### Usage
+    1. Check `/health` to verify API is running
+    2. Use `/foods` to get available food options
+    3. Send meal data to `/predict` for safety analysis
+    """,
+    version="2.0.0",
+    contact={
+        "name": "DiaLog Team",
+        "email": "team@dialog.com",
+    },
+    license_info={
+        "name": "MIT",
+        "url": "https://opensource.org/licenses/MIT",
+    },
 )
 
 app.add_middleware(
@@ -125,7 +104,71 @@ BASE_DIR = Path(__file__).resolve().parent
 DATA_DIR = BASE_DIR / "data"
 MODEL_DIR = BASE_DIR / "models"
 
-# Load the food dataset
+
+# Endpoint to log each meal in the list to Firestore
+@app.post("/log-meal-firestore")
+async def log_meal_to_firestore(log: MealLog):
+    if not FIREBASE_AVAILABLE or not firebase_initialized or not firestore_db:
+        raise HTTPException(status_code=503, detail="Firebase/Firestore not available")
+    
+    try:
+        results = []
+        for meal in log.meals:
+            # Prepare prediction request for each meal with default values
+            predict_req = MealRequest(
+                age=35,  # Default age
+                gender="Male",  # Default gender
+                weight_kg=70,  # Default weight in kg
+                height_cm=170,  # Default height in cm
+                fasting_sugar=log.sugar_level_fasting,
+                post_meal_sugar=log.sugar_level_post,
+                meal_taken=meal.meal_name,
+                time_of_day=meal.time_of_day,
+                portion_size=meal.quantity,
+                portion_unit=meal.unit
+            )
+            prediction = await predict_meal_safety(predict_req)
+            # Prepare log entry
+            log_entry = {
+                "userId": log.userId,
+                "meal_name": meal.meal_name,
+                "quantity": meal.quantity,
+                "unit": meal.unit,
+                "time_of_day": meal.time_of_day,
+                "sugar_level_fasting": log.sugar_level_fasting,
+                "sugar_level_post": log.sugar_level_post,
+                "prediction": prediction.dict(),
+                "createdAt": firestore.SERVER_TIMESTAMP if not log.createdAt else log.createdAt
+            }
+            if FIREBASE_AVAILABLE and firestore_db:
+                doc_ref = firestore_db.collection("logs").add(log_entry)
+            results.append({"doc_id": doc_ref[1].id, "meal": meal.meal_name, "risk": prediction.risk_level})
+        # Calculate overall risk for the meal event
+        risk_levels = [r["risk"] for r in results]
+        if "high" in risk_levels:
+            overall_risk = "high"
+        elif "medium" in risk_levels:
+            overall_risk = "medium"
+        else:
+            overall_risk = "low"
+
+        summary_entry = {
+            "userId": log.userId,
+            "meals": [r["meal"] for r in results],
+            "sugar_level_fasting": log.sugar_level_fasting,
+            "sugar_level_post": log.sugar_level_post,
+            "overall_risk": overall_risk,
+            "individual_risks": risk_levels,
+            "createdAt": firestore.SERVER_TIMESTAMP if not log.createdAt else log.createdAt
+        }
+        if FIREBASE_AVAILABLE and firestore_db:
+            firestore_db.collection("logs_summary").add(summary_entry)
+
+        return {"success": True, "results": results, "overall_risk": overall_risk}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Failed to log meals: {str(e)}")
+
+# Load the food dataset directly
 try:
     food_df = pd.read_csv(DATA_DIR / "Food_Master_Dataset_.csv")
     print(f"Loaded {len(food_df)} foods from dataset")
@@ -134,506 +177,849 @@ except Exception as e:
     print(f"Error loading food dataset: {e}")
     food_df = pd.DataFrame()
 
-# Portion mapping for realistic portion sizes (in grams)
-PORTION_MAPPING = {
-    'piece': 50,      # 1 piece = 50g (average for items like idli, dosa)
-    'pieces': 50,     # plural form
-    'cup': 200,       # 1 cup = 200g 
-    'cups': 200,      # plural form
-    'bowl': 150,      # 1 bowl = 150g
-    'bowls': 150,     # plural form
-    'plate': 200,     # 1 plate = 200g
-    'plates': 200,    # plural form
-    'tbsp': 15,       # 1 tablespoon = 15g
-    'tablespoon': 15,
-    'tablespoons': 15,
-    'tsp': 5,         # 1 teaspoon = 5g
-    'teaspoon': 5,
-    'teaspoons': 5,
-    'gram': 1,        # 1 gram = 1g (base unit)
-    'grams': 1,       # plural form
-    'g': 1,           # short form
-    'kg': 1000,       # 1 kg = 1000g
-    'glass': 250,     # 1 glass = 250g (for liquids)
-    'glasses': 250,   # plural form
-    'ml': 1,          # 1 ml ≈ 1g for most foods
-    'liter': 1000,    # 1 liter = 1000g
-    'liters': 1000,   # plural form
-    'slice': 30,      # 1 slice = 30g (bread, etc.)
-    'slices': 30,     # plural form
-}
+# Global variables for model artifacts
+model = None
+scaler = None
+feature_columns = None
+# New improved predictor
+meal_safety_predictor = None
+# Personalized ML recommender
+personalized_recommender = None
 
-def get_portion_weight_grams(quantity: float, unit: str) -> float:
-    """Convert quantity and unit to grams with better validation"""
-    if quantity <= 0:
-        raise ValueError(f"Quantity must be positive, got {quantity}")
-    
-    unit_lower = unit.lower().strip()
-    multiplier = PORTION_MAPPING.get(unit_lower, 100)  # Default to 100g if unit not found
-    
-    # Log warning for unknown units
-    if unit_lower not in PORTION_MAPPING:
-        print(f"Warning: Unknown unit '{unit}', using default 100g per unit")
-    
-    result = quantity * multiplier
-    
-    # Reasonable limits for portion sizes
-    if result > 2000:  # More than 2kg seems unreasonable for a single food item
-        print(f"Warning: Very large portion size: {result}g for {quantity} {unit}")
-    
-    return result
+# Load model and artifacts
+def load_model_artifacts():
+    global model, scaler, feature_columns, meal_safety_predictor, personalized_recommender
+    try:
+        # Initialize improved prediction system with medical model
+        meal_safety_predictor = MealSafetyPredictor()
+        meal_safety_predictor.load_food_dataset(DATA_DIR / "Food_Master_Dataset_.csv")
+        meal_safety_predictor.load_model(MODEL_DIR)  # This will load the medical model
+        
+        print("✅ Medical prediction system initialized")
+        
+        # Initialize personalized ML recommender
+        if PERSONALIZED_ML_AVAILABLE:
+            try:
+                personalized_recommender = PersonalizedMealRecommender(
+                    data_path=str(DATA_DIR / "User_Logs_Dataset.csv")
+                )
+                print("✅ Personalized ML recommender initialized")
+            except Exception as e:
+                print(f"⚠️ Could not initialize personalized recommender: {e}")
+                personalized_recommender = None
+        
+        return True
+        
+    except Exception as e:
+        print(f"❌ Error loading model: {e}")
+        return False
 
-def calculate_bmi(weight_kg: float, height_cm: float) -> float:
-    """Calculate BMI from weight and height with validation"""
-    # Validate inputs
-    if height_cm <= 0 or weight_kg <= 0:
-        raise ValueError("Height and weight must be positive values")
-    
-    if height_cm < 50 or height_cm > 300:
-        raise ValueError("Height must be between 50-300 cm")
-    
-    if weight_kg < 10 or weight_kg > 500:
-        raise ValueError("Weight must be between 10-500 kg")
-    
-    height_m = height_cm / 100
-    bmi = weight_kg / (height_m ** 2)
-    return round(bmi, 1)
+# Pydantic models for request/response
+class MealRequest(BaseModel):
+    age: int
+    gender: str
+    weight_kg: float
+    height_cm: float
+    fasting_sugar: float
+    post_meal_sugar: float
+    meal_taken: str
+    time_of_day: str
+    portion_size: float
+    portion_unit: str
 
-def calculate_aggregated_nutrition(meals: list[MealLogMeal]) -> dict:
-    """Calculate aggregated nutritional values for multiple meals"""
-    total_nutrition = {
-        'calories': 0,
-        'carbs_g': 0,
-        'protein_g': 0,
-        'fat_g': 0,
-        'fiber_g': 0,
-        'glycemic_load': 0,
-        'meal_names': [],
-        'portion_details': []
-    }
-    
-    for meal in meals:
-        if meal.meal_name not in food_df.index:
-            print(f"Warning: {meal.meal_name} not found in food database")
-            continue
-            
-        food_row = food_df.loc[meal.meal_name]
-        
-        # Convert portion to grams using realistic mapping
-        portion_weight_grams = get_portion_weight_grams(meal.quantity, meal.unit)
-        
-        # Calculate multiplier based on 100g serving (assuming dataset values are per 100g)
-        portion_multiplier = portion_weight_grams / 100.0
-        
-        # Calculate nutritional values
-        calories = float(food_row.get('calories_kcal', 0)) * portion_multiplier
-        carbs = float(food_row.get('carbs_g', 0)) * portion_multiplier
-        protein = float(food_row.get('protein_g', 0)) * portion_multiplier
-        fat = float(food_row.get('fat_g', 0)) * portion_multiplier
-        fiber = float(food_row.get('fiber_g', 0)) * portion_multiplier
-        
-        # Calculate glycemic load: GL = (GI × carbs_in_portion) / 100
-        gi = float(food_row.get('glycemic_index', 50))
-        glycemic_load = (gi * carbs) / 100.0
-        
-        # Add to totals
-        total_nutrition['calories'] += calories
-        total_nutrition['carbs_g'] += carbs
-        total_nutrition['protein_g'] += protein
-        total_nutrition['fat_g'] += fat
-        total_nutrition['fiber_g'] += fiber
-        total_nutrition['glycemic_load'] += glycemic_load
-        
-        total_nutrition['meal_names'].append(meal.meal_name)
-        total_nutrition['portion_details'].append(
-            f"{meal.quantity} {meal.unit} {meal.meal_name} ({portion_weight_grams:.0f}g)"
-        )
-    
-    # Calculate weighted average glycemic index
-    total_carbs = total_nutrition['carbs_g']
-    if total_carbs > 0:
-        total_nutrition['avg_glycemic_index'] = (total_nutrition['glycemic_load'] * 100) / total_carbs
-    else:
-        total_nutrition['avg_glycemic_index'] = 50
-    
-    return total_nutrition
+class NutritionalInfo(BaseModel):
+    calories: float
+    carbs_g: float
+    protein_g: float
+    fat_g: float
+    fiber_g: float
 
-def assess_meal_risk(nutrition: dict, bmi: float, fasting_sugar: float, post_meal_sugar: float) -> dict:
-    """Enhanced meal risk assessment with improved thresholds and scoring"""
-    risk_factors = []
-    risk_score = 0
-    
-    # Blood sugar level assessment (most important factor)
-    if post_meal_sugar > 250:
-        risk_factors.append("Dangerously high post-meal blood sugar")
-        risk_score += 5
-    elif post_meal_sugar > 200:
-        risk_factors.append("Very high post-meal blood sugar")
-        risk_score += 4
-    elif post_meal_sugar > 180:
-        risk_factors.append("Elevated post-meal blood sugar")
-        risk_score += 3
-    elif post_meal_sugar > 140:
-        risk_factors.append("Borderline high post-meal blood sugar")
-        risk_score += 1.5
-    
-    if fasting_sugar > 140:
-        risk_factors.append("Very high fasting blood sugar")
-        risk_score += 3
-    elif fasting_sugar > 126:
-        risk_factors.append("High fasting blood sugar (diabetic range)")
-        risk_score += 2
-    elif fasting_sugar > 100:
-        risk_factors.append("Elevated fasting blood sugar (pre-diabetic range)")
-        risk_score += 1
-    
-    # Glycemic load assessment (refined thresholds)
-    gl = nutrition['glycemic_load']
-    if gl >= 25:
-        risk_factors.append("Very high glycemic load - rapid blood sugar spike expected")
-        risk_score += 3
-    elif gl >= 20:
-        risk_factors.append("High glycemic load - significant blood sugar impact")
-        risk_score += 2.5
-    elif gl >= 15:
-        risk_factors.append("Moderate-high glycemic load")
-        risk_score += 1.5
-    elif gl >= 10:
-        risk_factors.append("Medium glycemic load")
-        risk_score += 0.5
-    
-    # Carbohydrate assessment (more refined)
-    carbs = nutrition['carbs_g']
-    if carbs > 80:
-        risk_factors.append("Very high carbohydrate content")
-        risk_score += 3
-    elif carbs > 60:
-        risk_factors.append("High carbohydrate content")
-        risk_score += 2
-    elif carbs > 45:
-        risk_factors.append("Moderate carbohydrate content")
-        risk_score += 1
-    elif carbs > 30:
-        risk_factors.append("Moderate-low carbohydrate content")
-        risk_score += 0.5
-    
-    # Calorie consideration for portion control
-    calories = nutrition.get('calories', 0)
-    if calories > 800:
-        risk_factors.append("Very high calorie meal - consider portion control")
-        risk_score += 1.5
-    elif calories > 600:
-        risk_factors.append("High calorie meal")
-        risk_score += 1
-    elif calories > 400:
-        risk_factors.append("Moderate calorie meal")
-        risk_score += 0.5
-    
-    # BMI consideration (enhanced)
-    if bmi > 35:
-        risk_factors.append("Obesity Class II - strict portion control recommended")
-        risk_score += 2
-    elif bmi > 30:
-        risk_factors.append("Obesity Class I - careful portion control needed")
-        risk_score += 1.5
-    elif bmi > 25:
-        risk_factors.append("Overweight - monitor portions")
-        risk_score += 0.5
-    
-    # Fiber content (protective factor)
-    fiber = nutrition.get('fiber_g', 0)
-    if fiber >= 10:
-        risk_factors.append("Good fiber content helps slow sugar absorption")
-        risk_score -= 0.5
-    elif fiber >= 5:
-        risk_factors.append("Moderate fiber content")
-        risk_score -= 0.25
-    
-    # Protein content (protective factor)
-    protein = nutrition.get('protein_g', 0)
-    if protein >= 20:
-        risk_factors.append("Good protein content helps stabilize blood sugar")
-        risk_score -= 0.5
-    elif protein >= 10:
-        risk_factors.append("Adequate protein content")
-        risk_score -= 0.25
-    
-    # Determine overall risk with consistent standard labels
-    if risk_score >= 6:
-        risk_level = "high"
-        recommendation = "High risk meal - consider smaller portions, add protein/fiber, or choose lower-carb alternatives"
-    elif risk_score >= 3:
-        risk_level = "moderate"  # Changed from "medium" to "moderate"
-        recommendation = "Moderate risk - monitor blood sugar closely and consider pairing with protein/vegetables"
-    elif risk_score >= 1:
-        risk_level = "moderate"  # Changed from "low-medium" to "moderate" for consistency
-        recommendation = "Generally suitable with minor considerations for portion size"
-    else:
-        risk_level = "low"
-        recommendation = "This meal appears well-suited for your current profile"
-    
-    return {
-        "risk_level": risk_level,
-        "risk_score": round(risk_score, 2),
-        "risk_factors": risk_factors,
-        "recommendation": recommendation,
-        "thresholds_used": {
-            "post_meal_danger": 250,
-            "post_meal_high": 200,
-            "post_meal_elevated": 180,
-            "glycemic_load_high": 20,
-            "carbs_high": 60
-        }
-    }
+class Recommendation(BaseModel):
+    name: str
+    reason: str
 
-# Pydantic models for responses
+class PredictionResponse(BaseModel):
+    is_safe: bool
+    confidence: float
+    risk_level: str
+    message: str
+    bmi: float
+    nutritional_info: Optional[NutritionalInfo] = None
+    recommendations: Optional[List[Recommendation]] = None
+
 class HealthResponse(BaseModel):
     status: str
-    message: str
     model_loaded: bool
+    foods_count: int
+    version: str
 
 class FoodsResponse(BaseModel):
-    status: str
     foods: List[str]
     count: int
 
-class AggregatedPredictionResponse(BaseModel):
-    meals: List[str]
-    total_nutrition: Dict[str, Any]
-    risk_assessment: Dict[str, Any]
-    recommendations: List[str]
-    confidence: float
+# Load model on startup
+@app.on_event("startup")
+async def startup_event():
+    load_model_artifacts()
 
-@app.get("/")
+# API Endpoints
+@app.get("/", response_model=Dict[str, str])
 async def root():
-    return {"message": "DiaLog API is running", "version": "2.0.0"}
+    return {
+        "message": "Welcome to DiaLog API - Diabetes Meal Safety Predictor",
+        "version": "2.0.0",
+        "docs": "/docs",
+        "health": "/health"
+    }
 
 @app.get("/health", response_model=HealthResponse)
 async def health_check():
     return HealthResponse(
-        status="healthy",
-        message="API is running",
-        model_loaded=not food_df.empty
+        status="healthy" if model is not None else "model_not_loaded",
+        model_loaded=model is not None,
+        foods_count=len(food_df),
+        version="2.0.0"
     )
 
 @app.get("/foods", response_model=FoodsResponse)
-async def get_foods():
-    if food_df.empty:
-        return FoodsResponse(status="error", foods=[], count=0)
-    
-    foods = food_df.index.tolist()
-    return FoodsResponse(
-        status="success",
-        foods=foods,
-        count=len(foods)
-    )
-
-@app.post("/predict-aggregated-meal", response_model=AggregatedPredictionResponse)
-async def predict_aggregated_meal_safety(request: AggregatedMealRequest):
-    """
-    Predict safety for multiple meals combined as one meal event.
-    Uses proper glycemic load calculation and risk assessment.
-    """
+async def get_foods(search: Optional[str] = Query(None, description="Search term to filter foods")):
     try:
         if food_df.empty:
             raise HTTPException(status_code=500, detail="Food database not loaded")
         
-        # Validate input data
-        if not request.meals or len(request.meals) == 0:
-            raise HTTPException(status_code=400, detail="At least one meal must be provided")
+        foods_list = food_df.index.tolist()
         
-        if request.fasting_sugar < 50 or request.fasting_sugar > 400:
-            raise HTTPException(status_code=400, detail="Fasting sugar must be between 50-400 mg/dL")
+        if search:
+            search_lower = search.lower()
+            foods_list = [food for food in foods_list if search_lower in food.lower()]
         
-        if request.post_meal_sugar < 50 or request.post_meal_sugar > 600:
-            raise HTTPException(status_code=400, detail="Post-meal sugar must be between 50-600 mg/dL")
+        return FoodsResponse(foods=sorted(foods_list), count=len(foods_list))
+    
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Error fetching foods: {str(e)}")
+
+def calculate_bmi(weight_kg: float, height_cm: float) -> float:
+    # Safety check to prevent division by zero
+    if height_cm <= 0 or weight_kg <= 0:
+        return 25.0  # Return normal BMI as default
+    height_m = height_cm / 100
+    return round(weight_kg / (height_m ** 2), 1)
+
+def get_nutritional_info_enhanced(food_name: str, portion_size_g: float, 
+                                portion_features: Dict[str, float]) -> NutritionalInfo:
+    """
+    Enhanced nutritional info that includes portion-adjusted values.
+    """
+    if food_name not in food_df.index:
+        return None
+    
+    # Use portion-aware features for more accurate info
+    return NutritionalInfo(
+        calories=portion_features['calories_effective_kcal'],
+        carbs_g=portion_features['carbs_effective_g'],
+        protein_g=food_df.loc[food_name].get('protein_g', 0) * portion_features['portion_multiplier'],
+        fat_g=food_df.loc[food_name].get('fat_g', 0) * portion_features['portion_multiplier'],
+        fiber_g=food_df.loc[food_name].get('fiber_g', 0) * portion_features['portion_multiplier']
+    )
+
+def generate_enhanced_recommendations(food_name: str, prediction_result: Dict[str, any], 
+                                   bmi: float, user_data: Dict[str, any]) -> List[Recommendation]:
+    """
+    Generate recommendations based on the improved prediction system.
+    """
+    recommendations = []
+    risk_level = prediction_result['risk_level']
+    reasons = prediction_result.get('reasons', [])
+    portion_features = prediction_result.get('portion_features', {})
+    
+    # Risk-specific recommendations
+    if risk_level == 'unsafe':
+        recommendations.append(Recommendation(
+            name="Avoid This Meal",
+            reason="Multiple risk factors detected. Consider alternatives or significantly reduce portion."
+        ))
         
-        # Calculate aggregated nutrition
-        aggregated_nutrition = calculate_aggregated_nutrition(request.meals)
+        if portion_features.get('portion_multiplier', 1) > 2:
+            recommendations.append(Recommendation(
+                name="Reduce Portion Size", 
+                reason=f"Current portion is {portion_features['portion_multiplier']:.1f}× normal. Try 0.5-1× instead."
+            ))
+            
+        if portion_features.get('GL_portion', 0) > 20:
+            recommendations.append(Recommendation(
+                name="Add Fiber and Protein",
+                reason="High glycemic load. Pair with vegetables and protein to slow absorption."
+            ))
+            
+    elif risk_level == 'caution':
+        recommendations.append(Recommendation(
+            name="Monitor Closely",
+            reason="Some risk factors present. Check blood sugar 2 hours after eating."
+        ))
         
-        # Calculate BMI with validation
-        try:
-            bmi = calculate_bmi(request.weight_kg, request.height_cm)
-        except ValueError as e:
-            raise HTTPException(status_code=400, detail=str(e))
+        if portion_features.get('sugar_effective_g', 0) > 25:
+            recommendations.append(Recommendation(
+                name="Post-Meal Walk",
+                reason=f"High sugar content ({portion_features['sugar_effective_g']:.0f}g). Walk for 15-20 minutes."
+            ))
+            
+    else:  # safe
+        recommendations.append(Recommendation(
+            name="Good Choice",
+            reason="This meal appears suitable for your profile. Continue monitoring as usual."
+        ))
+    
+    # BMI-specific advice
+    if bmi > 25:
+        recommendations.append(Recommendation(
+            name="Portion Control",
+            reason="Focus on portion sizes to support healthy weight management."
+        ))
+    
+    # Always add general diabetes advice
+    recommendations.append(Recommendation(
+        name="Post-Meal Activity",
+        reason="Light physical activity after meals helps regulate blood sugar."
+    ))
+    
+    return recommendations
+
+def get_nutritional_info(food_name: str, portion_size: float) -> NutritionalInfo:
+    if food_name not in food_df.index:
+        return None
+    
+    food_row = food_df.loc[food_name]
+    
+    # Calculate nutritional values based on portion size
+    # Assuming the dataset values are per 100g serving
+    multiplier = portion_size / 1.0  # Adjust based on your portion unit logic
+    
+    return NutritionalInfo(
+        calories=float(food_row.get('calories_kcal', 0)) * multiplier,
+        carbs_g=float(food_row.get('carbs_g', 0)) * multiplier,
+        protein_g=float(food_row.get('protein_g', 0)) * multiplier,
+        fat_g=float(food_row.get('fat_g', 0)) * multiplier,
+        fiber_g=float(food_row.get('fiber_g', 0)) * multiplier
+    )
+
+def generate_recommendations(food_name: str, is_safe: bool, bmi: float) -> List[Recommendation]:
+    recommendations = []
+    
+    if not is_safe:
+        recommendations.append(Recommendation(
+            name="Portion Control",
+            reason="Consider reducing portion size by 25-30% to minimize blood sugar impact"
+        ))
         
-        # Assess meal risk
-        risk_assessment = assess_meal_risk(
-            aggregated_nutrition, bmi, request.fasting_sugar, request.post_meal_sugar
+        recommendations.append(Recommendation(
+            name="Add Fiber",
+            reason="Include high-fiber vegetables or salad to slow sugar absorption"
+        ))
+    
+    if bmi > 25:
+        recommendations.append(Recommendation(
+            name="Weight Management",
+            reason="Consider lower calorie alternatives to support healthy weight"
+        ))
+    
+    # Add exercise recommendation
+    recommendations.append(Recommendation(
+        name="Post-meal Activity",
+        reason="Take a 10-15 minute walk after eating to help regulate blood sugar"
+    ))
+    
+    return recommendations
+
+@app.post("/predict", response_model=PredictionResponse)
+async def predict_meal_safety(request: MealRequest):
+    """
+    Improved meal safety prediction with hard guardrails and portion awareness.
+    """
+    try:
+        global meal_safety_predictor
+        
+        if meal_safety_predictor is None:
+            raise HTTPException(status_code=503, detail="Prediction system not initialized")
+        
+        # Convert portion unit to grams (simplified conversion)
+        portion_unit_to_grams = {
+            'cup': 200, 'bowl': 250, 'plate': 300, 'piece': 100,
+            'slice': 50, 'spoon': 15, 'glass': 250, 'g': 1, 'grams': 1
+        }
+        portion_size_g = request.portion_size * portion_unit_to_grams.get(request.portion_unit.lower(), 100)
+        
+        # Calculate BMI
+        bmi = calculate_bmi(request.weight_kg, request.height_cm)
+        
+        # Prepare user context for prediction
+        user_data = {
+            'age': request.age,
+            'gender': request.gender,
+            'bmi': bmi,
+            'fasting_sugar': request.fasting_sugar,
+            'post_meal_sugar': request.post_meal_sugar,
+            'time_of_day': request.time_of_day
+        }
+        
+        # Use improved prediction system
+        result = meal_safety_predictor.predict_meal_safety(
+            request.meal_taken, 
+            portion_size_g, 
+            user_data
         )
         
-        # Generate recommendations
-        recommendations = [risk_assessment["recommendation"]]
+        # Map risk levels to expected format
+        risk_mapping = {
+            'safe': ('low', True),
+            'caution': ('medium', False), 
+            'unsafe': ('high', False)
+        }
         
-        # Add specific recommendations based on nutrition
-        if aggregated_nutrition['fiber_g'] < 5:
-            recommendations.append("Consider adding more fiber-rich foods to help regulate blood sugar")
+        risk_level, is_safe = risk_mapping.get(result['risk_level'], ('medium', False))
         
-        if aggregated_nutrition['protein_g'] < 15:
-            recommendations.append("Add protein to help slow carbohydrate absorption")
+        # Create response message with explanation
+        message = result['explanation']
+        confidence = result['confidence']
         
-        # Add portion-specific recommendations
-        if aggregated_nutrition['calories'] > 800:
-            recommendations.append("Consider reducing portion sizes - this meal is quite high in calories")
-        
-        if aggregated_nutrition['glycemic_load'] > 20:
-            recommendations.append("High glycemic load - consider pairing with protein and healthy fats")
-        
-        # Confidence score (simplified)
-        confidence = 0.85 if len(request.meals) > 0 else 0.5
-        
-        return AggregatedPredictionResponse(
-            meals=aggregated_nutrition['meal_names'],
-            total_nutrition=aggregated_nutrition,
-            risk_assessment=risk_assessment,
-            recommendations=recommendations,
-            confidence=confidence
+        # Get nutritional information (enhanced with portion awareness)
+        nutritional_info = get_nutritional_info_enhanced(
+            request.meal_taken, 
+            portion_size_g, 
+            result['portion_features']
         )
         
+        # Generate enhanced recommendations based on guardrails
+        recommendations = generate_enhanced_recommendations(
+            request.meal_taken, 
+            result, 
+            bmi,
+            user_data
+        )
+        
+        return PredictionResponse(
+            is_safe=is_safe,
+            confidence=confidence,
+            risk_level=risk_level,
+            message=message,
+            bmi=bmi,
+            nutritional_info=nutritional_info,
+            recommendations=recommendations
+        )
+        
+    except ValueError as ve:
+        raise HTTPException(status_code=400, detail=str(ve))
     except HTTPException:
         raise
     except Exception as e:
-        print(f"Error in predict_aggregated_meal_safety: {str(e)}")
-        raise HTTPException(status_code=500, detail=f"Error analyzing meal: {str(e)}")
+        raise HTTPException(status_code=500, detail=f"Prediction error: {str(e)}")
 
-async def log_meal_to_firestore(meal_log: MealLog, prediction_result=None):
-    """Log aggregated meal to Firestore with AI risk assessment"""
+@app.get("/food/{food_name}")
+async def get_food_details(food_name: str):
     try:
-        if not FIREBASE_AVAILABLE or not firebase_initialized:
-            print("⚠️ Firebase not available - skipping cloud logging")
-            return {"success": False, "message": "Firebase not available"}
+        if food_df.empty:
+            raise HTTPException(status_code=500, detail="Food database not loaded")
         
-        # Calculate aggregated nutrition for the meal
-        aggregated_nutrition = calculate_aggregated_nutrition(meal_log.meals)
-        bmi = calculate_bmi(meal_log.weight_kg, meal_log.height_cm)
+        if food_name not in food_df.index:
+            raise HTTPException(status_code=404, detail="Food not found")
         
-        # If no prediction provided, calculate it
-        if prediction_result is None:
-            aggregated_request = AggregatedMealRequest(
-                age=meal_log.age,
-                gender=meal_log.gender,
-                weight_kg=meal_log.weight_kg,
-                height_cm=meal_log.height_cm,
-                fasting_sugar=meal_log.sugar_level_fasting,
-                post_meal_sugar=meal_log.sugar_level_post,
-                meals=meal_log.meals,
-                notes=meal_log.notes
-            )
-            prediction_result = await predict_aggregated_meal_safety(aggregated_request)
-        
-        # Extract risk level from AI analysis for consistent storage
-        risk_level = "low"  # default
-        if prediction_result and hasattr(prediction_result, 'risk_assessment'):
-            ai_risk = prediction_result.risk_assessment.get('risk_level', 'low').lower()
-            # Store with consistent format: "X risk"
-            if ai_risk == 'high':
-                risk_level = "high risk"
-            elif ai_risk == 'moderate':
-                risk_level = "moderate risk"
-            else:
-                risk_level = "low risk"
-        
-        # Create the meal log document with AI risk assessment
-        meal_doc = {
-            "userId": meal_log.userId,
-            "age": meal_log.age,
-            "gender": meal_log.gender,
-            "weight_kg": meal_log.weight_kg,
-            "height_cm": meal_log.height_cm,
-            "bmi": bmi,
-            "sugar_level_fasting": meal_log.sugar_level_fasting,
-            "sugar_level_post": meal_log.sugar_level_post,
-            "meals": [meal.dict() for meal in meal_log.meals],
-            "meal_names": aggregated_nutrition['meal_names'],
-            "total_nutrition": aggregated_nutrition,
-            "notes": meal_log.notes,
-            "createdAt": meal_log.createdAt or datetime.datetime.now().isoformat(),
-            "timestamp": firestore.SERVER_TIMESTAMP,
-            # SINGLE SOURCE OF TRUTH FOR RISK LEVEL
-            "ai_risk_level": risk_level,  # "low risk", "moderate risk", "high risk"
-            "prediction": prediction_result.dict() if prediction_result else None
-        }
-        
-        # Store in Firestore under user's collection
-        doc_ref = firestore_db.collection('users').document(meal_log.userId).collection('meal_logs').add(meal_doc)
-        print(f"✅ Meal logged to Firestore under users/{meal_log.userId}/meal_logs with ID: {doc_ref[1].id}")
-        
-        return {"success": True, "doc_id": doc_ref[1].id}
-        
-    except Exception as e:
-        print(f"Error logging to Firestore: {str(e)}")
-        return {"success": False, "error": str(e)}
-
-@app.post("/log-meal")
-async def log_meal(meal_log: MealLog):
-    """Log a meal with multiple food items"""
-    try:
-        # Log to Firestore
-        result = await log_meal_to_firestore(meal_log)
-        
-        # Calculate aggregated nutrition for response
-        aggregated_nutrition = calculate_aggregated_nutrition(meal_log.meals)
-        bmi = calculate_bmi(meal_log.weight_kg, meal_log.height_cm)
-        risk_assessment = assess_meal_risk(
-            aggregated_nutrition, bmi, meal_log.sugar_level_fasting, meal_log.sugar_level_post
-        )
-        
+        food_row = food_df.loc[food_name]
         return {
-            "status": "success",
-            "message": "Meal logged successfully",
-            "meal_count": len(meal_log.meals),
-            "total_nutrition": aggregated_nutrition,
-            "risk_assessment": risk_assessment,
-            "firestore_result": result
+            "name": food_name,
+            "nutritional_info": {
+                "calories_per_100g": float(food_row.get('calories_kcal', 0)),
+                "carbs_g": float(food_row.get('carbs_g', 0)),
+                "protein_g": float(food_row.get('protein_g', 0)),
+                "fat_g": float(food_row.get('fat_g', 0)),
+                "fiber_g": float(food_row.get('fiber_g', 0)),
+                "glycemic_index": float(food_row.get('glycemic_index', 50))
+            },
+            "safety_info": {
+                "avoid_for_diabetic": food_row.get('avoid_for_diabetic', 'No'),
+                "safe_threshold_sugar": float(food_row.get('safe_threshold_sugar', 110)),
+                "risky_threshold_sugar": float(food_row.get('risky_threshold_sugar', 140))
+            }
         }
-        
+    except HTTPException:
+        raise
     except Exception as e:
-        print(f"Error in log_meal: {str(e)}")
-        raise HTTPException(status_code=500, detail=f"Failed to log meal: {str(e)}")
+        raise HTTPException(status_code=500, detail=f"Error fetching food details: {str(e)}")
 
-@app.post("/log-meal-firestore")
-async def log_meal_firestore(meal_log: MealLog):
-    """Log a meal with multiple food items to Firestore and return prediction"""
+@app.get("/test-guardrails")
+async def test_guardrails():
+    """
+    Run acceptance tests for the improved prediction system.
+    """
     try:
-        # Convert to aggregated meal request for prediction
-        aggregated_request = AggregatedMealRequest(
-            age=meal_log.age,
-            gender=meal_log.gender,
-            weight_kg=meal_log.weight_kg,
-            height_cm=meal_log.height_cm,
-            fasting_sugar=meal_log.sugar_level_fasting,
-            post_meal_sugar=meal_log.sugar_level_post,
-            meals=meal_log.meals,
-            notes=meal_log.notes
-        )
+        global meal_safety_predictor
         
-        # Get prediction
-        prediction_result = await predict_aggregated_meal_safety(aggregated_request)
+        if meal_safety_predictor is None:
+            raise HTTPException(status_code=503, detail="Prediction system not initialized")
         
-        # Log to Firestore WITH the AI prediction
-        firestore_result = await log_meal_to_firestore(meal_log, prediction_result)
-        
-        # Calculate aggregated nutrition for response
-        aggregated_nutrition = calculate_aggregated_nutrition(meal_log.meals)
+        # Run the acceptance tests
+        test_results = run_acceptance_tests(meal_safety_predictor)
         
         return {
             "success": True,
-            "message": "Meal logged successfully with prediction",
-            "prediction": {
-                "meals": prediction_result.meals,
-                "total_nutrition": prediction_result.total_nutrition,
-                "risk_assessment": prediction_result.risk_assessment,
-                "recommendations": prediction_result.recommendations,
-                "confidence": prediction_result.confidence
-            },
-            "aggregated_nutrition": aggregated_nutrition,
-            "firestore_result": firestore_result
+            "test_results": test_results,
+            "message": f"Tests completed: {test_results['passed']}/{test_results['passed'] + test_results['failed']} passed"
         }
         
     except Exception as e:
-        print(f"Error in log_meal_firestore: {str(e)}")
-        raise HTTPException(status_code=500, detail=f"Failed to log meal: {str(e)}")
+        raise HTTPException(status_code=500, detail=f"Test error: {str(e)}")
+
+@app.get("/predict-sample")
+async def predict_sample():
+    """
+    Sample prediction to demonstrate the improved system.
+    """
+    try:
+        global meal_safety_predictor
+        
+        if meal_safety_predictor is None:
+            raise HTTPException(status_code=503, detail="Prediction system not initialized")
+        
+        # Sample cases showing the improvements
+        sample_cases = [
+            {
+                "case": "Normal portion of safe food",
+                "meal": "Hot tea (Garam Chai)",
+                "portion_g": 200,
+                "user": {"age": 45, "gender": "Male", "bmi": 25, "fasting_sugar": 100, "time_of_day": "Breakfast"}
+            },
+            {
+                "case": "Large portion triggering guardrails",
+                "meal": "Plain cream cake", 
+                "portion_g": 150,
+                "user": {"age": 45, "gender": "Male", "bmi": 25, "fasting_sugar": 100, "time_of_day": "Snack"}
+            }
+        ]
+        
+        results = []
+        for case in sample_cases:
+            try:
+                prediction = meal_safety_predictor.predict_meal_safety(
+                    case["meal"], case["portion_g"], case["user"]
+                )
+                results.append({
+                    "case": case["case"],
+                    "meal": case["meal"], 
+                    "risk_level": prediction["risk_level"],
+                    "explanation": prediction["explanation"]
+                })
+            except Exception as e:
+                results.append({
+                    "case": case["case"],
+                    "error": str(e)
+                })
+        
+        return {"sample_predictions": results}
+        
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Sample prediction error: {str(e)}")
+
+class PersonalizedRecommendationRequest(BaseModel):
+    age: int
+    gender: str
+    weight_kg: float
+    height_cm: float
+    fasting_sugar: int
+    post_meal_sugar: int
+    diabetes_type: str
+    time_of_day: str = "Lunch"
+    meal_preferences: Optional[List[str]] = None
+    count: int = 6
+
+@app.post("/recommendations")
+async def get_personalized_recommendations(request: PersonalizedRecommendationRequest):
+    """
+    Generate truly personalized meal recommendations using ML model.
+    """
+    if meal_safety_predictor is None:
+        raise HTTPException(status_code=503, detail="Prediction system not initialized")
+    
+    try:
+        # Calculate BMI for context
+        bmi = calculate_bmi(request.weight_kg, request.height_cm)
+        
+        # Create user context
+        user_data = {
+            'age': request.age,
+            'gender': request.gender,
+            'bmi': bmi,
+            'fasting_sugar': request.fasting_sugar,
+            'post_meal_sugar': request.post_meal_sugar,
+            'time_of_day': request.time_of_day,
+            'diabetes_type': request.diabetes_type
+        }
+        
+        # Get all available foods
+        if not hasattr(meal_safety_predictor, 'food_df') or meal_safety_predictor.food_df is None:
+            raise HTTPException(status_code=503, detail="Food dataset not loaded")
+        
+        all_foods = list(meal_safety_predictor.food_df.index)
+        
+        # Filter foods based on time of day and preferences
+        time_filters = {
+            'Breakfast': ['idli', 'dosa', 'poha', 'upma', 'oats', 'daliya', 'paratha'],
+            'Lunch': ['dal', 'rice', 'roti', 'sabzi', 'curry', 'pulao', 'khichdi'],
+            'Dinner': ['soup', 'dal', 'roti', 'sabzi', 'curry', 'vegetable'],
+            'Snack': ['fruit', 'nuts', 'tea', 'milk', 'sprouts', 'chaat']
+        }
+        
+        relevant_keywords = time_filters.get(request.time_of_day, time_filters['Lunch'])
+        
+        # Find foods matching time of day
+        candidate_foods = []
+        for food in all_foods:
+            food_lower = food.lower()
+            if any(keyword in food_lower for keyword in relevant_keywords):
+                candidate_foods.append(food)
+        
+        # If no specific matches, use all foods
+        if len(candidate_foods) < request.count:
+            candidate_foods = all_foods
+        
+        # Test each food with ML model and rank by safety
+        food_scores = []
+        
+        for food in candidate_foods[:50]:  # Test up to 50 foods for performance
+            try:
+                # Use standard portion size for comparison
+                standard_portion = 200  # 200g standard
+                
+                prediction = meal_safety_predictor.predict_meal_safety(
+                    food, standard_portion, user_data
+                )
+                
+                # Calculate safety score (higher = safer)
+                risk_scores = {'safe': 1.0, 'caution': 0.6, 'unsafe': 0.1}
+                safety_score = risk_scores.get(prediction['risk_level'], 0.5)
+                confidence = prediction['confidence']
+                
+                # Combined score weighted by confidence
+                final_score = safety_score * confidence
+                
+                food_scores.append({
+                    'food_name': food,
+                    'safety_score': final_score,
+                    'risk_level': prediction['risk_level'],
+                    'confidence': confidence,
+                    'explanation': prediction['explanation'],
+                    'portion_features': prediction.get('portion_features', {}),
+                    'reasons': prediction.get('reasons', [])
+                })
+                
+            except Exception as e:
+                # Skip foods that cause errors
+                continue
+        
+        # Sort by safety score (highest first) and select top recommendations
+        food_scores.sort(key=lambda x: x['safety_score'], reverse=True)
+        top_recommendations = food_scores[:request.count]
+        
+        # Generate dynamic reasons for each recommendation
+        recommendations = []
+        for food_rec in top_recommendations:
+            food_row = meal_safety_predictor.food_df.loc[food_rec['food_name']]
+            
+            # Generate intelligent, food-specific reasons
+            dynamic_reasons = generate_intelligent_reasons(
+                food_rec['food_name'], 
+                food_row, 
+                food_rec['portion_features'],
+                user_data,
+                food_rec['risk_level']
+            )
+            
+            recommendations.append({
+                'name': food_rec['food_name'],
+                'risk_level': food_rec['risk_level'],
+                'confidence': food_rec['confidence'],
+                'safety_score': food_rec['safety_score'],
+                'calories': round(food_row.get('Calorie', 0) * 200 / 100),  # 200g portion from per 100g data
+                'carbs': round(food_row.get('Carbohydrate (g)', 0) * 200 / 100, 1),
+                'protein': round(food_row.get('Protein (g)', 0) * 200 / 100, 1),
+                'fat': round(food_row.get('Total Fat (g)', 0) * 200 / 100, 1),
+                'fiber': round(food_row.get('Dietary Fiber (g)', 0) * 200 / 100, 1),
+                'glycemicIndex': food_row.get('GI', 50),
+                'portionSize': "200g (1 serving)",
+                'timeOfDay': request.time_of_day,
+                'reasons': dynamic_reasons,
+                'explanation': food_rec['explanation']
+            })
+        
+        return {
+            'recommendations': recommendations,
+            'user_profile': {
+                'bmi': bmi,
+                'risk_profile': 'high' if bmi > 30 or request.fasting_sugar > 125 else 'moderate' if bmi > 25 or request.fasting_sugar > 100 else 'low'
+            },
+            'personalization_factors': [
+                f"Age: {request.age} years",
+                f"BMI: {bmi:.1f}",
+                f"Fasting glucose: {request.fasting_sugar} mg/dL",
+                f"Meal time: {request.time_of_day}"
+            ]
+        }
+        
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Recommendation error: {str(e)}")
+
+def generate_intelligent_reasons(food_name: str, food_row: pd.Series, portion_features: Dict, 
+                                user_data: Dict, risk_level: str) -> List[str]:
+    """Generate intelligent, food-specific reasons for recommendations."""
+    reasons = []
+    
+    # Get nutritional data
+    calories = food_row.get('Calorie', 0)
+    carbs = food_row.get('Carbohydrate (g)', 0)
+    protein = food_row.get('Protein (g)', 0)
+    fiber = food_row.get('Dietary Fiber (g)', 0)
+    gi = food_row.get('GI', 50)
+    fat = food_row.get('Total Fat (g)', 0)
+    
+    food_lower = food_name.lower()
+    
+    # Food category specific reasons
+    if any(veg in food_lower for veg in ['vegetable', 'sabzi', 'bhindi', 'spinach', 'methi', 'cauliflower']):
+        reasons.append(f"Rich in fiber ({fiber:.1f}g) - helps slow glucose absorption")
+        if gi < 55:
+            reasons.append(f"Low glycemic index ({gi}) prevents blood sugar spikes")
+            
+    elif any(dal in food_lower for dal in ['dal', 'lentil', 'arhar', 'moong', 'chana']):
+        reasons.append(f"High protein ({protein:.1f}g) promotes satiety and stable blood sugar")
+        reasons.append("Recommended by diabetologists - 1-2 servings daily")
+        
+    elif any(grain in food_lower for grain in ['rice', 'roti', 'wheat', 'bread']):
+        if gi > 70:
+            reasons.append(f"High GI ({gi}) - recommend pairing with vegetables and protein")
+        else:
+            reasons.append(f"Moderate GI ({gi}) - good carbohydrate choice when portion-controlled")
+            
+    elif any(fruit in food_lower for fruit in ['apple', 'orange', 'banana', 'fruit']):
+        reasons.append(f"Natural fruit sugars with fiber ({fiber:.1f}g) for better glycemic control")
+        
+    # BMI-specific reasons
+    user_bmi = user_data.get('bmi', 25)
+    if user_bmi > 25 and calories < 100:
+        reasons.append(f"Low calorie ({calories:.0f} kcal) - supports weight management")
+    elif user_bmi > 25 and calories > 200:
+        reasons.append(f"Higher calorie content - consider smaller portions for weight goals")
+        
+    # Blood sugar specific reasons
+    fasting_sugar = user_data.get('fasting_sugar', 100)
+    if fasting_sugar > 125:  # High fasting glucose
+        if carbs < 15:
+            reasons.append("Low carbohydrate content ideal for glucose control")
+        elif carbs > 30:
+            reasons.append("Higher carbs - monitor blood sugar 2 hours post-meal")
+            
+    # Age-specific recommendations
+    age = user_data.get('age', 35)
+    if age > 50 and protein > 8:
+        reasons.append(f"High protein ({protein:.1f}g) supports muscle health in mature adults")
+        
+    # Risk level specific reasons
+    if risk_level == 'safe':
+        reasons.append("Multiple safety factors align with your health profile")
+    elif risk_level == 'caution':
+        reasons.append("Acceptable with portion control and monitoring")
+        
+    # Time of day reasons
+    time_of_day = user_data.get('time_of_day', 'Lunch')
+    if time_of_day == 'Breakfast' and carbs > 20:
+        reasons.append("Good morning carbs provide sustained energy")
+    elif time_of_day == 'Dinner' and carbs < 20:
+        reasons.append("Light carbs ideal for evening meal")
+        
+    # Default fallback
+    if not reasons:
+        reasons.append("Nutritionally balanced option for diabetic diet")
+        
+    return reasons[:3]  # Limit to 3 most relevant reasons
+
+# New personalized recommendation request model
+class TrulyPersonalizedRequest(BaseModel):
+    user_id: int
+    age: int
+    gender: str
+    weight_kg: float
+    height_cm: float
+    fasting_sugar: float
+    post_meal_sugar: int
+    diabetes_type: str
+    time_of_day: str = "Lunch"
+    count: int = 6
+
+@app.post("/truly-personalized-recommendations")
+async def get_truly_personalized_recommendations(request: TrulyPersonalizedRequest):
+    """
+    Generate truly personalized meal recommendations using individual user ML models
+    trained on User_Logs_Dataset.csv - this replaces generic reasons with user-specific insights.
+    """
+    global personalized_recommender
+    
+    if personalized_recommender is None:
+        # Fallback to general recommendations if personalized not available
+        return await get_general_ml_recommendations(request)
+    
+    try:
+        # Get available foods from the main dataset
+        if meal_safety_predictor is None or not hasattr(meal_safety_predictor, 'food_df'):
+            raise HTTPException(status_code=503, detail="Food dataset not loaded")
+        
+        all_foods = list(meal_safety_predictor.food_df.index)
+        
+        # Filter foods based on time of day
+        time_filters = {
+            'Breakfast': ['idli', 'dosa', 'poha', 'upma', 'oats', 'daliya', 'paratha', 'milk', 'bread'],
+            'Lunch': ['dal', 'rice', 'roti', 'sabzi', 'curry', 'pulao', 'khichdi', 'vegetable'],
+            'Dinner': ['soup', 'dal', 'roti', 'sabzi', 'curry', 'vegetable', 'salad'],
+            'Snack': ['fruit', 'nuts', 'tea', 'milk', 'sprouts', 'chaat', 'biscuit']
+        }
+        
+        relevant_keywords = time_filters.get(request.time_of_day, time_filters['Lunch'])
+        candidate_foods = []
+        
+        for food in all_foods:
+            food_lower = food.lower()
+            if any(keyword in food_lower for keyword in relevant_keywords):
+                candidate_foods.append(food)
+        
+        # If no specific matches, use broader selection
+        if len(candidate_foods) < request.count:
+            candidate_foods = all_foods[:50]  # Use first 50 foods
+        
+        # Prepare user features for personalized prediction
+        user_features = {
+            'Age': request.age,
+            'Weight': request.weight_kg,
+            'Height': request.height_cm,
+            'BMI': request.weight_kg / ((request.height_cm / 100) ** 2),
+            'Gender_encoded': 1 if request.gender.lower() == 'male' else 0,
+            'Diabetes_Type_encoded': 0 if request.diabetes_type == 'Type1' else 1,
+            'Meal_Time_encoded': {'Breakfast': 0, 'Lunch': 1, 'Dinner': 2, 'Snack': 3}.get(request.time_of_day, 1)
+        }
+        
+        # Get personalized predictions for each food
+        food_recommendations = []
+        for food in candidate_foods[:30]:  # Limit for performance
+            try:
+                # Get personalized blood sugar prediction
+                predicted_bs = personalized_recommender.predict_blood_sugar(
+                    request.user_id, food, user_features
+                )
+                
+                # Get personalized recommendation reason
+                personalized_reason = personalized_recommender.get_personalized_recommendation_reason(
+                    request.user_id, food, predicted_bs
+                )
+                
+                # Determine risk level based on predicted blood sugar
+                if predicted_bs <= 140:
+                    risk_level = "safe"
+                    safety_score = 1.0
+                elif predicted_bs <= 180:
+                    risk_level = "caution"
+                    safety_score = 0.6
+                else:
+                    risk_level = "unsafe"
+                    safety_score = 0.2
+                
+                # Get nutritional info
+                food_row = meal_safety_predictor.food_df.loc[food]
+                
+                food_recommendations.append({
+                    'name': food,
+                    'predicted_blood_sugar': round(predicted_bs, 1),
+                    'risk_level': risk_level,
+                    'safety_score': safety_score,
+                    'personalized_reason': personalized_reason,
+                    'calories': round(food_row.get('Calorie', 0) * 200 / 100),
+                    'carbs': round(food_row.get('Carbohydrate (g)', 0) * 200 / 100, 1),
+                    'protein': round(food_row.get('Protein (g)', 0) * 200 / 100, 1),
+                    'fat': round(food_row.get('Total Fat (g)', 0) * 200 / 100, 1),
+                    'fiber': round(food_row.get('Dietary Fiber (g)', 0) * 200 / 100, 1),
+                    'glycemicIndex': food_row.get('GI', 50),
+                    'portionSize': "200g (1 serving)",
+                    'timeOfDay': request.time_of_day
+                })
+                
+            except Exception as e:
+                # Skip foods that cause errors
+                continue
+        
+        # Sort by safety score (higher = safer)
+        food_recommendations.sort(key=lambda x: x['safety_score'], reverse=True)
+        top_recommendations = food_recommendations[:request.count]
+        
+        # Get user's personal insights
+        personal_insights = personalized_recommender.get_personal_insights(request.user_id)
+        
+        # Get user model status
+        model_status = personalized_recommender.get_user_model_status(request.user_id)
+        
+        return {
+            'recommendations': top_recommendations,
+            'personalization': {
+                'user_id': request.user_id,
+                'has_personal_model': model_status['has_personal_model'],
+                'meal_count': model_status['meal_count'],
+                'model_score': model_status['model_score'],
+                'personal_insights': personal_insights,
+                'personalization_note': (
+                    "Recommendations based on your personal meal history and glycemic responses" 
+                    if model_status['has_personal_model'] 
+                    else "General ML recommendations - log more meals to get personalized insights"
+                )
+            },
+            'user_profile': {
+                'bmi': user_features['BMI'],
+                'diabetes_type': request.diabetes_type,
+                'personalized': model_status['has_personal_model']
+            }
+        }
+        
+    except Exception as e:
+        # Fallback to general recommendations on error
+        print(f"⚠️ Personalized recommendation error: {e}")
+        return await get_general_ml_recommendations(request)
+
+async def get_general_ml_recommendations(request):
+    """Fallback to general ML recommendations when personalized not available"""
+    # Convert to PersonalizedRecommendationRequest format
+    general_request = PersonalizedRecommendationRequest(
+        age=request.age,
+        gender=request.gender,
+        weight_kg=request.weight_kg,
+        height_cm=request.height_cm,
+        fasting_sugar=request.fasting_sugar,
+        post_meal_sugar=request.post_meal_sugar,
+        diabetes_type=request.diabetes_type,
+        time_of_day=request.time_of_day,
+        count=request.count
+    )
+    
+    # Get general recommendations and add note about personalization
+    general_result = await get_personalized_recommendations(general_request)
+    
+    # Add personalization status
+    general_result['personalization'] = {
+        'user_id': request.user_id,
+        'has_personal_model': False,
+        'meal_count': 0,
+        'model_score': None,
+        'personal_insights': "Log more meals to unlock personalized recommendations!",
+        'personalization_note': "General ML recommendations - personalized model not available"
+    }
+    
+    # Update reasons to indicate they're general
+    for rec in general_result['recommendations']:
+        if 'reasons' in rec:
+            rec['reasons'] = [f"Traditional healthy option: {reason}" for reason in rec['reasons']]
+    
+    return general_result
 
 if __name__ == "__main__":
     import uvicorn
-    uvicorn.run(app, host="0.0.0.0", port=8000)
+    uvicorn.run(app, host="0.0.0.0", port=8002)

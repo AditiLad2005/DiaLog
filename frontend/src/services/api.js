@@ -126,33 +126,6 @@ export async function getTrulyPersonalizedRecommendations(userProfile) {
 }
 
 /**
- * Log aggregated meal data to Firestore and get prediction
- * @param {Object} mealLogData - Aggregated meal log data
- * @returns {Promise<Object>} - Log result with prediction and nutrition data
- */
-export async function logMealToFirestore(mealLogData) {
-  try {
-    const response = await fetch(`${API_BASE_URL}/log-meal-firestore`, {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-      },
-      body: JSON.stringify(mealLogData),
-    });
-
-    if (!response.ok) {
-      const errorData = await response.json();
-      throw new Error(`Meal logging error: ${errorData.detail || "Unknown error"}`);
-    }
-
-    return await response.json();
-  } catch (error) {
-    console.error("Meal logging request failed:", error);
-    throw error;
-  }
-}
-
-/**
  * Check if the API is healthy and models are loaded
  * @returns {Promise<Object>} - Health status
  */

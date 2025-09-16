@@ -2,10 +2,10 @@ import React from 'react';
 import { PieChart, Pie, Cell, Tooltip, Legend, ResponsiveContainer } from 'recharts';
 
 const MealRiskDonutChart = ({ data, title = "Recent Meals Analysis", showMealNames = false }) => {
-  // Sample data if none provided - STANDARDIZED LABELS
+  // Sample data if none provided
   const defaultData = [
     { name: 'Low Risk', value: 65, count: 13, color: '#10b981' },
-    { name: 'Moderate Risk', value: 25, count: 5, color: '#f59e0b' },
+    { name: 'Medium Risk', value: 25, count: 5, color: '#f59e0b' },
     { name: 'High Risk', value: 10, count: 2, color: '#ef4444' }
   ];
 
@@ -14,12 +14,12 @@ const MealRiskDonutChart = ({ data, title = "Recent Meals Analysis", showMealNam
   console.log('DonutChart received data:', data); // Debug log
   console.log('Using chartData:', chartData); // Debug log
 
-  // Get risk-based color - STANDARDIZED LABELS
+  // Get risk-based color
   const getRiskColor = (risk) => {
     const riskLower = risk?.toLowerCase() || 'unknown';
-    if (riskLower === 'high') return '#ef4444';      // danger-500
-    if (riskLower === 'moderate') return '#f59e0b';  // warning-500 - STANDARDIZED
-    if (riskLower === 'low') return '#10b981';       // success-500
+    if (riskLower === 'high') return '#ef4444';
+    if (riskLower === 'medium') return '#f59e0b';
+    if (riskLower === 'low') return '#10b981';
     return '#6b7280'; // gray for unknown
   };
 
@@ -27,32 +27,16 @@ const MealRiskDonutChart = ({ data, title = "Recent Meals Analysis", showMealNam
     if (active && payload && payload.length) {
       const data = payload[0].payload;
       return (
-        <div className="bg-white dark:bg-gray-800 p-4 rounded-lg shadow-lg border border-gray-200 dark:border-gray-600 max-w-xs">
+        <div className="bg-white dark:bg-gray-800 p-4 rounded-lg shadow-lg border border-gray-200 dark:border-gray-600">
           <p className="text-gray-900 dark:text-white font-medium">{data.name}</p>
-          <p className="text-sm text-gray-600 dark:text-gray-400">
-            {data.count || data.value} {data.count ? 'meals' : 'entries'}
-          </p>
           {showMealNames && data.risk && (
             <p className="text-sm text-gray-600 dark:text-gray-400 capitalize">
-              Risk Level: {data.risk}
+              {data.risk} Risk
             </p>
           )}
-          {data.meals && data.meals.length > 0 && (
-            <div className="mt-2">
-              <p className="text-xs text-gray-500 dark:text-gray-400 font-medium">Recent meals:</p>
-              <ul className="text-xs text-gray-600 dark:text-gray-300 mt-1">
-                {data.meals.slice(0, 3).map((meal, idx) => (
-                  <li key={idx} className="truncate">• {meal}</li>
-                ))}
-                {data.meals.length > 3 && (
-                  <li className="text-gray-400">... and {data.meals.length - 3} more</li>
-                )}
-              </ul>
-            </div>
-          )}
           {data.postMeal && (
-            <p className="text-sm text-gray-600 dark:text-gray-400 mt-1">
-              Avg Post-meal: {data.postMeal} mg/dL
+            <p className="text-sm text-gray-600 dark:text-gray-400">
+              Post-meal: {data.postMeal} mg/dL
             </p>
           )}
         </div>

@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { useAuth } from '../contexts/AuthContext';
+import { auth } from '../services/firebase';
 import { saveUserProfile, fetchUserProfile } from '../services/firebase';
 import { 
   UserIcon, 
@@ -9,7 +9,6 @@ import {
 } from '@heroicons/react/24/outline';
 
 const Profile = () => {
-  const { user, loading: authLoading } = useAuth();
   const [formData, setFormData] = useState({
     name: '',
     email: '',
@@ -23,12 +22,10 @@ const Profile = () => {
   const [bmi, setBmi] = useState(null);
   const [isLoading, setIsLoading] = useState(false);
   const [isEditing, setIsEditing] = useState(false);
-  
   // Fetch profile data on mount
   React.useEffect(() => {
     const fetchProfile = async () => {
-      if (authLoading) return; // Wait for auth to load
-      
+      const user = auth.currentUser;
       if (user) {
         let profile = await fetchUserProfile(user.uid);
         if (profile) {
@@ -45,7 +42,7 @@ const Profile = () => {
       }
     };
     fetchProfile();
-  }, [user, authLoading]); // Add dependencies
+  }, []);
 
   // Calculate BMI whenever height or weight changes
   React.useEffect(() => {
@@ -93,6 +90,7 @@ const Profile = () => {
     e.preventDefault();
     setIsLoading(true);
     try {
+      const user = auth.currentUser;
       if (!user) {
         alert('You must be logged in to save your profile.');
         setIsLoading(false);
@@ -107,38 +105,6 @@ const Profile = () => {
   };
 
   const isFormValid = formData.name && formData.email && formData.age && formData.gender;
-
-  // Show loading while authentication is being determined
-  if (authLoading) {
-    return (
-      <div className="min-h-screen bg-primary-50 dark:bg-gray-900 py-12 transition-all duration-300">
-        <div className="max-w-4xl mx-auto px-4 sm:px-6 lg:px-8">
-          <div className="text-center">
-            <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-primary-600 mx-auto"></div>
-            <p className="mt-4 text-neutral-600 dark:text-neutral-300">Loading...</p>
-          </div>
-        </div>
-      </div>
-    );
-  }
-
-  // Show login message if not authenticated
-  if (!user) {
-    return (
-      <div className="min-h-screen bg-primary-50 dark:bg-gray-900 py-12 transition-all duration-300">
-        <div className="max-w-4xl mx-auto px-4 sm:px-6 lg:px-8">
-          <div className="text-center">
-            <h1 className="text-3xl font-bold text-primary-700 dark:text-primary-400 mb-4">
-              Please Log In
-            </h1>
-            <p className="text-lg text-neutral-600 dark:text-neutral-300">
-              You need to be logged in to view your profile.
-            </p>
-          </div>
-        </div>
-      </div>
-    );
-  }
 
   return (
     <div className="min-h-screen bg-primary-50 dark:bg-gray-900 py-12 transition-all duration-300">

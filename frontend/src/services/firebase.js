@@ -1,6 +1,6 @@
 
 import { initializeApp } from "firebase/app";
-import { getFirestore, collection, addDoc, setDoc, doc, serverTimestamp, updateDoc, getDoc } from "firebase/firestore";
+import { getFirestore, collection, addDoc, setDoc, doc, serverTimestamp, updateDoc, getDoc, getDocs, query, orderBy, where, limit as firestoreLimit } from "firebase/firestore";
 import { getAuth } from "firebase/auth";
 
 const firebaseConfig = {
@@ -46,23 +46,10 @@ export const updateMealLogAnalysis = async (userId, logId, analysis) => {
 
 export const saveUserProfile = async (userId, profileData) => {
     try {
-        // Check if profile is complete - use the correct field names
-        const isProfileComplete = !!(
-            (profileData.fullName || profileData.name) && 
-            profileData.email && 
-            profileData.age && 
-            profileData.gender && 
-            profileData.height && 
-            profileData.weight
-        );
-        
-        const completeProfileData = {
+        await setDoc(doc(db, `users/${userId}/profile`, "main"), {
             ...profileData,
-            profileComplete: isProfileComplete,
-            updatedAt: new Date().toISOString()
-        };
-        
-        await setDoc(doc(db, `users/${userId}/profile`, "main"), completeProfileData);
+            updatedAt: serverTimestamp()
+        });
     } catch (error) {
         console.error("Error saving user profile:", error);
         throw error;
@@ -71,37 +58,81 @@ export const saveUserProfile = async (userId, profileData) => {
 
 export const fetchUserProfile = async (userId) => {
     try {
-        const profileDoc = await doc(db, `users/${userId}/profile`, "main");
+        const profileDoc = doc(db, `users/${userId}/profile`, "main");
         const snapshot = await getDoc(profileDoc);
         if (snapshot.exists()) {
-            const profileData = snapshot.data();
-            
-            // Check if we need to update the profileComplete status
-            const shouldBeComplete = !!(
-                (profileData.fullName || profileData.name) && 
-                profileData.email && 
-                profileData.age && 
-                profileData.gender && 
-                profileData.height && 
-                profileData.weight
-            );
-            
-            // If the completion status is incorrect, update it
-            if (profileData.profileComplete !== shouldBeComplete) {
-                console.log('Updating profile completion status...');
-                await updateDoc(profileDoc, { 
-                    profileComplete: shouldBeComplete,
-                    updatedAt: new Date().toISOString()
-                });
-                return { ...profileData, profileComplete: shouldBeComplete };
-            }
-            
-            return profileData;
+            return snapshot.data();
         } else {
             return null;
         }
     } catch (error) {
         console.error("Error fetching user profile:", error);
+        throw error;
+    }
+};
+
+// Additional helper functions for the current code structure
+
+export const fetchUserLogs = async (userId, limit = 50) => {
+    try {
+        console.log('Fetching logs for user:', userId); // Debug log
+        const userLogsCollection = collection(db, `users/${userId}/logs`);
+        const q = query(userLogsCollection, orderBy("createdAt", "desc"), firestoreLimit(limit));
+        const snapshot = await getDocs(q);
+        console.log('Snapshot size:', snapshot.size); // Debug log
+        
+        const logs = snapshot.docs.map(doc => { 
+            const data = doc.data();
+            console.log('Log data:', data); // Debug log
+            return {
+                id: doc.id, 
+                ...data,
+                // Ensure createdAt is properly formatted
+                createdAt: data.createdAt?.toDate ? data.createdAt.toDate() : (data.createdAt ? new Date(data.createdAt) : new Date())
+            };
+        });
+        
+        console.log('Processed logs:', logs); // Debug log
+        return logs;
+    } catch (error) {
+        console.error("Error fetching user logs:", error);
+        console.error("Error details:", error.message, error.code); // More detailed error
+        throw error;
+    }
+};
+
+export const fetchRecentLogs = async (userId, days = 7) => {
+    try {
+        const userLogsCollection = collection(db, `users/${userId}/logs`);
+        const cutoffDate = new Date();
+        cutoffDate.setDate(cutoffDate.getDate() - days);
+        
+        const q = query(
+            userLogsCollection, 
+            orderBy("createdAt", "desc"),
+            where("createdAt", ">=", cutoffDate)
+        );
+        const snapshot = await getDocs(q);
+        return snapshot.docs.map(doc => ({ 
+            id: doc.id, 
+            ...doc.data(),
+            createdAt: doc.data().createdAt?.toDate ? doc.data().createdAt.toDate() : new Date(doc.data().createdAt)
+        }));
+    } catch (error) {
+        console.error("Error fetching recent logs:", error);
+        throw error;
+    }
+};
+
+export const updateUserProfile = async (userId, updates) => {
+    try {
+        const profileDoc = doc(db, `users/${userId}/profile`, "main");
+        await updateDoc(profileDoc, {
+            ...updates,
+            updatedAt: serverTimestamp()
+        });
+    } catch (error) {
+        console.error("Error updating user profile:", error);
         throw error;
     }
 };

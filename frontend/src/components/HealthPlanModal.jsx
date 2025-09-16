@@ -11,116 +11,313 @@ import {
 const HealthPlanModal = ({ meal, isOpen, onClose, riskLevel = 'low' }) => {
   if (!isOpen) return null;
 
-  // Risk-based health plan recommendations 
-  const getHealthPlan = (risk) => {
+  // Health plan recommendations based on food type and risk level
+  const getHealthPlan = (mealName, risk) => {
+    const foodLower = mealName?.toLowerCase() || '';
+    
+    let recommendations = {
+      immediate: [],
+      shortTerm: [],
+      longTerm: [],
+      monitoring: []
+    };
+
+    // Determine food category
+    const isHighCarb = foodLower.includes('rice') || foodLower.includes('bread') || foodLower.includes('roti') || 
+                      foodLower.includes('pasta') || foodLower.includes('noodles') || foodLower.includes('potato');
+    const isSweet = foodLower.includes('sweet') || foodLower.includes('sugar') || foodLower.includes('dessert') || 
+                   foodLower.includes('cake') || foodLower.includes('ice cream') || foodLower.includes('chocolate');
+    const isProtein = foodLower.includes('dal') || foodLower.includes('lentil') || foodLower.includes('chicken') || 
+                     foodLower.includes('fish') || foodLower.includes('egg') || foodLower.includes('paneer');
+    const isVegetable = foodLower.includes('vegetable') || foodLower.includes('salad') || foodLower.includes('spinach') ||
+                       foodLower.includes('broccoli') || foodLower.includes('cabbage') || foodLower.includes('carrot');
+    const isFried = foodLower.includes('fried') || foodLower.includes('pakora') || foodLower.includes('samosa') ||
+                   foodLower.includes('chips') || foodLower.includes('fries');
+
+    // HIGH RISK FOODS - Urgent intervention needed
     if (risk === 'high') {
-      return {
-        immediate: [
-          "URGENT: Take a 20-25 minute brisk walk immediately to counter potential sugar spike",
+      if (isSweet) {
+        recommendations.immediate = [
+          "URGENT: Take a 20-25 minute brisk walk immediately to counter sugar spike",
           "Drink 2-3 glasses of water to help flush excess glucose",
-          "Check blood sugar in 1 hour - expect significant elevation",
-          "Practice deep breathing exercises to reduce stress-induced glucose spikes",
-          "Avoid any additional food for the next 3-4 hours"
-        ],
-        shortTerm: [
-          "Take prescribed diabetes medication if recommended by your doctor",
-          "Monitor for symptoms: excessive thirst, frequent urination, fatigue",
+          "Check blood sugar in 1 hour - it may spike significantly",
+          "Take deep breaths and avoid stress - stress worsens sugar spikes"
+        ];
+        recommendations.shortTerm = [
+          "Avoid any more sweets or carbs for next 4-6 hours",
+          "Take prescribed diabetes medication if recommended by doctor",
           "Do light stretching or yoga after 2 hours",
-          "Plan a protein-rich, low-carb meal for your next eating time",
-          "Stay extra hydrated throughout the rest of the day"
-        ],
-        longTerm: [
-          "CRITICAL: Discuss this meal choice with your healthcare provider",
-          "Learn about portion control and safer food alternatives",
-          "Consider working with a diabetes educator for meal planning",
-          "Track patterns to identify your personal trigger foods",
+          "Monitor for symptoms: excessive thirst, frequent urination, fatigue"
+        ];
+        recommendations.longTerm = [
+          "CRITICAL: Discuss sweet consumption with your healthcare provider",
+          "Learn about diabetes-friendly dessert alternatives",
+          "Consider portion control strategies for future occasions",
           "Work on stress management techniques to improve glucose response"
-        ],
-        monitoring: [
-          "Check blood sugar every hour for the next 4 hours",
-          "Watch for emergency symptoms: confusion, rapid heartbeat, dizziness",
-          "Log this meal's impact for discussion with your healthcare team"
-        ]
-      };
-    } else if (risk === 'medium') {
-      return {
-        immediate: [
-          "Take a 10-15 minute pleasant walk to help with glucose management",
-          "Drink a glass of water to stay well hydrated",
-          "Relax and avoid stressful activities for the next 30 minutes",
-          "Consider having a small portion of nuts if you feel hungry later"
-        ],
-        shortTerm: [
-          "Light exercise like stretching after 1 hour is beneficial",
-          "Monitor how you feel in 2 hours - note your energy levels",
-          "Choose protein-rich snacks if you need something later",
-          "Ensure good sleep tonight as food choices can affect sleep quality"
-        ],
-        longTerm: [
-          "Track patterns with similar meals to understand your body's response",
-          "Consider smaller portions or different preparation methods next time",
-          "Always pair carbohydrates with vegetables and protein for better control",
-          "Regular exercise helps improve your body's carbohydrate tolerance"
-        ],
-        monitoring: [
-          "Check blood sugar in 1.5-2 hours (expect mild to moderate elevation)",
-          "Note energy patterns and hunger levels throughout the day"
-        ]
-      };
-    } else {
-      return {
-        immediate: [
-          "Great choice! A gentle 5-10 minute walk will enhance the benefits",
-          "Stay hydrated and enjoy the sustained energy this meal provides",
-          "Continue with your normal activities - no restrictions needed"
-        ],
-        shortTerm: [
-          "Any type of exercise is fine after 30 minutes",
-          "This meal should keep you satisfied for several hours",
-          "Use this as a template for future healthy meal planning"
-        ],
-        longTerm: [
-          "Keep making excellent choices like this for optimal health",
-          "Build on this success by exploring similar healthy meal options",
-          "Track how these positive choices make you feel overall"
-        ],
-        monitoring: [
-          "Expect stable blood sugar levels with sustained energy",
-          "Notice how satisfied and energetic you feel compared to other meals"
-        ]
-      };
+        ];
+        recommendations.monitoring = [
+          "Check blood sugar every hour for next 4 hours",
+          "Watch for warning signs: dizziness, excessive thirst, blurred vision"
+        ];
+      } else if (isHighCarb) {
+        recommendations.immediate = [
+          "Take a 15-20 minute walk to help muscles absorb glucose",
+          "Drink water slowly - avoid large amounts at once",
+          "Practice breathing exercises to reduce cortisol impact",
+          "Consider taking fiber supplement if approved by doctor"
+        ];
+        recommendations.shortTerm = [
+          "Avoid additional carbohydrates for next 4 hours",
+          "Light resistance exercises after 90 minutes can help",
+          "Monitor energy levels - high carbs can cause crashes",
+          "Plan protein-rich snack in 3-4 hours if needed"
+        ];
+        recommendations.longTerm = [
+          "Learn carb counting and portion control for rice/bread",
+          "Switch to whole grain alternatives gradually",
+          "Always pair carbs with vegetables and protein",
+          "Track blood sugar patterns with different carb amounts"
+        ];
+        recommendations.monitoring = [
+          "Blood sugar check in 1-2 hours (expect 180+ mg/dl spike)",
+          "Note how you feel at 2-3 hour mark for pattern tracking"
+        ];
+      } else if (isFried) {
+        recommendations.immediate = [
+          "Take a 20-minute walk - fried foods slow glucose absorption",
+          "Sip warm water slowly to aid digestion",
+          "Avoid lying down for next 2 hours",
+          "Take antacid if you experience bloating or discomfort"
+        ];
+        recommendations.shortTerm = [
+          "No more fried or fatty foods today",
+          "Light exercise after 2 hours when digestion settles",
+          "Choose steamed or grilled foods for remaining meals",
+          "Increase water intake to help liver process fats"
+        ];
+        recommendations.longTerm = [
+          "Limit fried foods to once per week maximum",
+          "Learn healthier cooking methods: grilling, steaming, baking",
+          "Understand how fats affect your blood sugar timing",
+          "Plan balanced meals with minimal processed foods"
+        ];
+        recommendations.monitoring = [
+          "Blood sugar may spike later (2-3 hours) due to fat content",
+          "Watch for digestive discomfort or acid reflux"
+        ];
+      } else {
+        // Fallback for other high-risk foods
+        recommendations.immediate = [
+          "URGENT: Take a 20-minute brisk walk immediately",
+          "Drink 2-3 glasses of water to help dilute blood sugar",
+          "Check blood sugar in 1 hour - expect significant spike",
+          "Practice deep breathing - stress worsens glucose levels",
+          "Avoid any additional food for next 3-4 hours"
+        ];
+        recommendations.shortTerm = [
+          "Take prescribed diabetes medication if recommended",
+          "Avoid strenuous exercise for 2 hours",
+          "Monitor for warning symptoms: thirst, fatigue, dizziness",
+          "Plan light, protein-rich meal for next eating time",
+          "Stay extra hydrated throughout the day"
+        ];
+        recommendations.longTerm = [
+          "CRITICAL: Discuss this food choice with your healthcare provider",
+          "Learn about portion control and meal timing strategies",
+          "Consider working with a diabetes educator",
+          "Track patterns and identify your personal trigger foods",
+          "Work on stress management to improve glucose response"
+        ];
+        recommendations.monitoring = [
+          "Check blood sugar every hour for next 4 hours",
+          "Watch for emergency symptoms: confusion, rapid heartbeat",
+          "Log how this food affects your overall daily control"
+        ];
+      }
     }
+    
+    // MEDIUM RISK FOODS - Moderate precautions
+    else if (risk === 'medium') {
+      if (isHighCarb) {
+        recommendations.immediate = [
+          "Take a 10-15 minute pleasant walk to help glucose uptake",
+          "Drink a glass of water to stay hydrated",
+          "Relax for 30 minutes - avoid stressful activities",
+          "Consider having some nuts or seeds to slow absorption"
+        ];
+        recommendations.shortTerm = [
+          "Light exercise like stretching after 1 hour is beneficial",
+          "Monitor how you feel in 2 hours - note energy levels",
+          "Choose protein-rich snacks if hungry later",
+          "Ensure good sleep tonight - carbs can affect sleep quality"
+        ];
+        recommendations.longTerm = [
+          "Track patterns with this amount of carbohydrates",
+          "Experiment with smaller portions next time",
+          "Always pair carbs with vegetables for better control",
+          "Regular exercise helps improve carbohydrate tolerance"
+        ];
+        recommendations.monitoring = [
+          "Check blood sugar in 1.5-2 hours (expect mild elevation)",
+          "Note energy patterns throughout the day"
+        ];
+      } else if (isProtein) {
+        recommendations.immediate = [
+          "Great choice! A gentle 10-minute walk will optimize protein use",
+          "Stay hydrated - protein requires water for metabolism",
+          "You can continue normal activities",
+          "This should provide steady energy for hours"
+        ];
+        recommendations.shortTerm = [
+          "Any exercise is fine after 30 minutes",
+          "Protein will keep you satisfied - avoid unnecessary snacking",
+          "This meal supports muscle health and blood sugar stability",
+          "Plan similar protein-rich meals for consistent control"
+        ];
+        recommendations.longTerm = [
+          "Maintain this protein intake pattern",
+          "Learn about different protein sources to avoid boredom",
+          "Combine proteins with vegetables for optimal nutrition",
+          "Use this as a template for future meal planning"
+        ];
+        recommendations.monitoring = [
+          "Minimal blood sugar impact expected from protein",
+          "Notice sustained energy levels compared to carb-heavy meals"
+        ];
+      } else if (isFried) {
+        recommendations.immediate = [
+          "Take a 15-minute walk to aid digestion",
+          "Sip water slowly over next hour",
+          "Consider digestive enzymes if recommended by doctor",
+          "Avoid heavy lifting or intense activity for 2 hours"
+        ];
+        recommendations.shortTerm = [
+          "Choose lighter, steamed foods for next meal",
+          "Light movement after 1.5 hours helps digestion",
+          "Monitor for any digestive discomfort",
+          "Plan extra vegetables for dinner to balance"
+        ];
+        recommendations.longTerm = [
+          "Limit fried foods to occasional treats",
+          "Learn air-frying or oven-baking alternatives",
+          "Balance indulgent meals with extra healthy choices",
+          "Track how fried foods affect your overall blood sugar patterns"
+        ];
+        recommendations.monitoring = [
+          "Blood sugar may be delayed - check in 2-3 hours",
+          "Note any digestive effects for future reference"
+        ];
+      } else {
+        // Fallback for other medium-risk foods
+        recommendations.immediate = [
+          "Take a 10-15 minute walk to help glucose management",
+          "Drink water and stay well hydrated",
+          "Relax for 30 minutes - avoid stressful activities",
+          "Monitor how you feel in the next hour"
+        ];
+        recommendations.shortTerm = [
+          "Light exercise after 1-2 hours is beneficial",
+          "Choose balanced snacks if needed later",
+          "Track how this food affects your energy levels",
+          "Plan vegetables with your next meal",
+          "Ensure good sleep tonight for glucose recovery"
+        ];
+        recommendations.longTerm = [
+          "Consider smaller portions of this food type",
+          "Learn to pair with low-glycemic vegetables",
+          "Track patterns with similar foods",
+          "Work on improving insulin sensitivity through exercise",
+          "Build a collection of safer food alternatives"
+        ];
+        recommendations.monitoring = [
+          "Check blood sugar in 1.5-2 hours (expect moderate elevation)",
+          "Note energy patterns and hunger levels",
+          "Track how this compares to your usual foods"
+        ];
+      }
+    }
+    
+    // LOW RISK FOODS - Keep it short and encouraging
+    else { // low risk
+      if (isVegetable) {
+        recommendations.immediate = [
+          "Great choice! A pleasant 5-minute walk is perfect",
+          "Stay hydrated and enjoy the energy"
+        ];
+        recommendations.shortTerm = [
+          "Continue normal activities - no restrictions",
+          "This supports your health goals perfectly"
+        ];
+        recommendations.longTerm = [
+          "Keep making choices like this",
+          "Vegetables are your best friend for diabetes control"
+        ];
+        recommendations.monitoring = [
+          "Minimal blood sugar impact expected"
+        ];
+      } else if (isProtein) {
+        recommendations.immediate = [
+          "Excellent protein choice! Light walk if desired",
+          "This will provide sustained energy"
+        ];
+        recommendations.shortTerm = [
+          "Any activity is fine after 30 minutes",
+          "This keeps you satisfied for hours"
+        ];
+        recommendations.longTerm = [
+          "Use this as your meal template",
+          "Protein supports stable blood sugar"
+        ];
+        recommendations.monitoring = [
+          "Expect stable levels with sustained energy"
+        ];
+      } else {
+        recommendations.immediate = [
+          "Good choice! Light walk enhances benefits",
+          "Continue normal activities"
+        ];
+        recommendations.shortTerm = [
+          "No special precautions needed",
+          "Monitor how satisfied you feel"
+        ];
+        recommendations.longTerm = [
+          "Build on this success",
+          "Track positive health patterns"
+        ];
+        recommendations.monitoring = [
+          "Stable blood sugar expected"
+        ];
+      }
+    }
+
+    return recommendations;
   };
 
-  const healthPlan = getHealthPlan(riskLevel);
+  const healthPlan = getHealthPlan(meal?.mealName, riskLevel);
 
   // Get risk-specific general tips
   const getGeneralTips = (risk) => {
     if (risk === 'high') {
       return [
-        "⚠️ This meal carries significant risk for blood sugar spikes",
-        "🩺 Check blood sugar frequently until levels stabilize",
-        "💊 Keep fast-acting glucose tablets handy for emergencies", 
-        "📞 Contact your doctor if symptoms worsen or persist",
-        "🚫 Avoid similar high-risk foods until you improve control",
-        "💧 Stay extra hydrated and avoid alcohol today"
+        "• Check blood sugar frequently until levels stabilize",
+        "• Keep fast-acting glucose tablets handy for emergencies", 
+        "• Contact your doctor if symptoms worsen or persist",
+        "• Avoid similar high-risk foods until you improve control",
+        "• Stay extra hydrated and avoid alcohol today"
       ];
     } else if (risk === 'medium') {
       return [
-        "⚠️ This meal requires moderate caution and monitoring",
-        "📊 Monitor blood sugar 2 hours after eating",
-        "💧 Stay hydrated and maintain regular meal timing",
-        "🥗 Balance future meals with more vegetables and protein",
-        "📝 Track patterns to identify your personal triggers",
-        "🚶‍♂️ Light exercise helps improve glucose metabolism"
+        "• Monitor blood sugar 2 hours after eating",
+        "• Stay hydrated and maintain regular meal timing",
+        "• Balance future meals with more vegetables and protein",
+        "• Track patterns to identify your personal triggers",
+        "• Light exercise helps improve glucose metabolism"
       ];
     } else {
       return [
-        "✅ Excellent choice! This supports your health goals",
-        "🎯 Keep making healthy choices like this one",
-        "💧 Stay hydrated throughout the day",
-        "📋 Use this meal as a template for future planning",
-        "💪 You're on the right track for optimal diabetes management"
+        "• Keep making healthy choices like this",
+        "• Stay hydrated throughout the day",
+        "• Use this meal as a template for future planning"
       ];
     }
   };
@@ -155,7 +352,7 @@ const HealthPlanModal = ({ meal, isOpen, onClose, riskLevel = 'low' }) => {
               </div>
               <div>
                 <h2 className="text-xl font-semibold text-gray-900 dark:text-white">
-                  Health Plan
+                  Health Plan for {meal?.mealName || 'Your Meal'}
                 </h2>
                 <p className="text-sm text-gray-600 dark:text-gray-400">
                   Risk Level: <span className={`font-medium capitalize ${riskLevel === 'high' ? 'text-red-600' : riskLevel === 'medium' ? 'text-yellow-600' : 'text-green-600'}`}>{riskLevel}</span>
