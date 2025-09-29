@@ -1,4 +1,5 @@
 import React, { useState } from 'react';
+import { useTranslationContext, INDIAN_LANGUAGES } from '../contexts/TranslationContext';
 import { auth } from '../services/firebase';
 import { saveUserProfile, fetchUserProfile } from '../services/firebase';
 import { 
@@ -22,6 +23,7 @@ const Profile = () => {
   const [bmi, setBmi] = useState(null);
   const [isLoading, setIsLoading] = useState(false);
   const [isEditing, setIsEditing] = useState(false);
+  const { language, setLanguage } = useTranslationContext();
   // Fetch profile data on mount
   React.useEffect(() => {
     const fetchProfile = async () => {
@@ -33,6 +35,10 @@ const Profile = () => {
             ...profile,
             email: user.email || profile.email || ''
           });
+          // Use saved language if present
+          if (profile?.preferredLanguage) {
+            try { setLanguage(profile.preferredLanguage); } catch {}
+          }
         } else {
           setFormData(prev => ({
             ...prev,
@@ -96,7 +102,8 @@ const Profile = () => {
         setIsLoading(false);
         return;
       }
-      await saveUserProfile(user.uid, { ...formData, bmi });
+      await saveUserProfile(user.uid, { ...formData, bmi, preferredLanguage: language });
+      try { localStorage.setItem('preferredLanguage', language); } catch {}
       alert('Profile saved successfully!');
     } catch (error) {
       alert('Error saving profile: ' + error.message);
@@ -163,6 +170,24 @@ const Profile = () => {
                     required
                     disabled
                   />
+                </div>
+
+                <div>
+                  <label htmlFor="language" className="block text-sm font-medium text-neutral-700 dark:text-neutral-300 mb-2">
+                    Preferred Language
+                  </label>
+                  <select
+                    id="language"
+                    name="language"
+                    value={language}
+                    onChange={(e) => setLanguage(e.target.value)}
+                    className="w-full px-4 py-3 rounded-xl border border-neutral-300 dark:border-neutral-600 bg-white dark:bg-gray-700 text-neutral-900 dark:text-white focus:ring-2 focus:ring-primary-500 focus:border-transparent transition-all duration-200"
+                    disabled={!isEditing}
+                  >
+                    {INDIAN_LANGUAGES.map(l => (
+                      <option key={l.code} value={l.code}>{l.name}</option>
+                    ))}
+                  </select>
                 </div>
 
                 <div>

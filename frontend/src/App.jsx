@@ -12,10 +12,14 @@ import Feedback from './pages/Feedback';
 import NotFound from './pages/NotFound';
 import './tailwind.css';
 import FoodSafety from './pages/FoodSafety';
+import { TranslationProvider } from './contexts/TranslationContext';
+import LiveTranslator from './components/LiveTranslator';
 
 function App() {
   return (
     <Router>
+      <TranslationProvider>
+      <LiveTranslator />
       <div className="flex flex-col min-h-screen">
         {/* Navigation */}
         <Navbar />
@@ -52,6 +56,7 @@ function App() {
         {/* Footer */}
         <Footer />
       </div>
+      </TranslationProvider>
     </Router>
   );
 }

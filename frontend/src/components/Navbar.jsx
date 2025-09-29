@@ -9,6 +9,7 @@ import {
   MoonIcon
 } from '@heroicons/react/24/outline';
 import LogoPlaceholder from './LogoPlaceholder';
+import LanguageSwitcher from './LanguageSwitcher';
 
 const Navbar = () => {
   const [isOpen, setIsOpen] = useState(false);
@@ -98,6 +99,9 @@ const Navbar = () => {
                 )}
               </Link>
             ))}
+            {/* Language switcher */}
+            <LanguageSwitcher />
+
             {/* Log Out button after authentication, before theme toggle */}
             {user && (
               <button
@@ -128,6 +132,8 @@ const Navbar = () => {
 
           {/* Mobile menu button */}
           <div className="md:hidden flex items-center space-x-2">
+            {/* Mobile language switcher */}
+            <LanguageSwitcher />
             {/* Mobile theme toggle */}
             <button
               onClick={toggleTheme}
