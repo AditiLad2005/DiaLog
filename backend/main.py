@@ -54,6 +54,9 @@ import os
 from typing import Optional, List, Dict, Any
 from pathlib import Path
 from dotenv import load_dotenv
+import requests
+import time
+import hashlib
 
 # Load environment variables
 load_dotenv()
@@ -103,6 +106,103 @@ app.add_middleware(
 BASE_DIR = Path(__file__).resolve().parent
 DATA_DIR = BASE_DIR / "data"
 MODEL_DIR = BASE_DIR / "models"
+
+# ---------------- Translation service config & cache ----------------
+LIBRETRANSLATE_URL = os.getenv("LIBRETRANSLATE_URL", "https://libretranslate.com")
+LIBRETRANSLATE_API_KEY = os.getenv("LIBRETRANSLATE_API_KEY", None)
+TRANSLATION_CACHE_TTL = int(os.getenv("TRANSLATION_CACHE_TTL", "86400"))  # seconds, default 1 day
+
+# simple in-memory cache: key -> {text, ts}
+_translation_cache: Dict[str, Dict[str, Any]] = {}
+
+def _tx_cache_key(text: str, src: str, tgt: str) -> str:
+    h = hashlib.sha256(f"{src}|{tgt}|{text}".encode("utf-8")).hexdigest()
+    return f"tx:{src}:{tgt}:{h}"
+
+def _tx_cache_get(text: str, src: str, tgt: str) -> Optional[str]:
+    k = _tx_cache_key(text, src, tgt)
+    entry = _translation_cache.get(k)
+    if not entry:
+        return None
+    if time.time() - entry["ts"] > TRANSLATION_CACHE_TTL:
+        # expired
+        try:
+            del _translation_cache[k]
+        except Exception:
+            pass
+        return None
+    return entry["text"]
+
+def _tx_cache_set(text: str, translated: str, src: str, tgt: str) -> None:
+    k = _tx_cache_key(text, src, tgt)
+    _translation_cache[k] = {"text": translated, "ts": time.time()}
+
+def _provider_libretranslate(text: str, src: str, tgt: str) -> Optional[str]:
+    try:
+        url = LIBRETRANSLATE_URL.rstrip("/") + "/translate"
+        payload = {
+            "q": text,
+            "source": src,
+            "target": tgt,
+            "format": "text",
+        }
+        if LIBRETRANSLATE_API_KEY:
+            payload["api_key"] = LIBRETRANSLATE_API_KEY
+        r = requests.post(url, json=payload, timeout=8)
+        if r.status_code != 200:
+            return None
+        data = r.json()
+        # Some instances return string, others dict with translatedText
+        if isinstance(data, dict):
+            return data.get("translatedText") or data.get("translation") or None
+        if isinstance(data, str):
+            return data
+        return None
+    except Exception:
+        return None
+
+def _provider_mymemory(text: str, src: str, tgt: str) -> Optional[str]:
+    try:
+        url = "https://api.mymemory.translated.net/get"
+        params = {"q": text, "langpair": f"{src}|{tgt}"}
+        r = requests.get(url, params=params, timeout=8)
+        if r.status_code == 429:
+            return None
+        data = r.json()
+        details = str(data.get("responseDetails") or "")
+        if "MYMEMORY WARNING" in details:
+            return None
+        if data.get("responseStatus") != 200:
+            return None
+        return (data.get("responseData") or {}).get("translatedText")
+    except Exception:
+        return None
+
+def translate_text(text: str, src: str, tgt: str) -> str:
+    if not text or src == tgt:
+        return text
+    # cache first
+    cached = _tx_cache_get(text, src, tgt)
+    if cached is not None:
+        return cached
+    # provider chain: LibreTranslate (configurable/public) -> MyMemory -> fallback original
+    for provider in (_provider_libretranslate, _provider_mymemory):
+        translated = provider(text, src, tgt)
+        if translated and isinstance(translated, str):
+            _tx_cache_set(text, translated, src, tgt)
+            return translated
+    # fallback
+    _tx_cache_set(text, text, src, tgt)
+    return text
+
+class TranslateBatchRequest(BaseModel):
+    texts: List[str]
+    source: str = "en"
+    target: str
+
+class TranslateBatchResponse(BaseModel):
+    translations: List[str]
+
 
 
 # Endpoint to log each meal in the list to Firestore
@@ -297,6 +397,31 @@ async def get_foods(search: Optional[str] = Query(None, description="Search term
     
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Error fetching foods: {str(e)}")
+
+# ---------------- Translation endpoints ----------------
+@app.post("/translate-batch", response_model=TranslateBatchResponse)
+async def translate_batch(req: TranslateBatchRequest):
+    try:
+        if not req.texts:
+            return TranslateBatchResponse(translations=[])
+        # Deduplicate to cut provider calls
+        unique = list(dict.fromkeys(req.texts))
+        mapped: Dict[str, str] = {}
+        for t in unique:
+            mapped[t] = translate_text(t, req.source, req.target)
+        # map in original order
+        out = [mapped.get(t, t) for t in req.texts]
+        return TranslateBatchResponse(translations=out)
+    except Exception as e:
+        # On any error, gracefully fall back to originals
+        return TranslateBatchResponse(translations=[t for t in req.texts])
+
+@app.get("/translate")
+async def translate(text: str, source: str = "en", target: str = "hi"):
+    try:
+        return {"translation": translate_text(text, source, target)}
+    except Exception:
+        return {"translation": text}
 
 def calculate_bmi(weight_kg: float, height_cm: float) -> float:
     # Safety check to prevent division by zero
