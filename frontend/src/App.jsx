@@ -11,6 +11,7 @@ import Dashboard from './pages/Dashboard';
 import Feedback from './pages/Feedback';
 import NotFound from './pages/NotFound';
 import './tailwind.css';
+import FoodSafety from './pages/FoodSafety';
 
 function App() {
   return (
@@ -36,6 +37,9 @@ function App() {
             
             {/* Dashboard */}
             <Route path="/dashboard" element={<Dashboard />} />
+
+            {/* Safety & Nutrition */}
+            <Route path="/safety" element={<FoodSafety />} />
             
             {/* Feedback */}
             <Route path="/feedback" element={<Feedback />} />

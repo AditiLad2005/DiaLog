@@ -513,6 +513,34 @@ async def predict_meal_safety(request: MealRequest):
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Prediction error: {str(e)}")
 
+def _to_native(value: Any):
+    """Convert numpy/pandas types to native Python types for JSON serialization."""
+    try:
+        import numpy as _np
+        if value is None:
+            return None
+        if isinstance(value, (_np.floating, _np.float32, _np.float64)):
+            v = float(value)
+            return None if (v != v) else v  # handle NaN
+        if isinstance(value, (_np.integer,)):
+            return int(value)
+    except Exception:
+        pass
+    # Handle pandas NA/NaT
+    try:
+        import pandas as _pd
+        if _pd.isna(value):
+            return None
+    except Exception:
+        pass
+    # Cast common numeric strings
+    try:
+        if isinstance(value, str) and value.strip() == "":
+            return None
+    except Exception:
+        pass
+    return value
+
 @app.get("/food/{food_name}")
 async def get_food_details(food_name: str):
     try:
@@ -523,21 +551,54 @@ async def get_food_details(food_name: str):
             raise HTTPException(status_code=404, detail="Food not found")
         
         food_row = food_df.loc[food_name]
+
+        # Build a comprehensive nutrition dict from known columns if present
+        nutrition_keys = [
+            'calories_kcal', 'carbs_g', 'protein_g', 'fat_g', 'fiber_g', 'sugar_g',
+            'glycemic_index', 'glycemic_load', 'sodium_mg', 'serving_size_g',
+            'default_portion'
+        ]
+        nutritional_info = {}
+        for k in nutrition_keys:
+            if k in food_row.index:
+                nutritional_info[k] = _to_native(food_row.get(k))
+
+        # Safety metadata
+        safety_info = {
+            "avoid_for_diabetic": _to_native(food_row.get('avoid_for_diabetic', 'No')),
+            "safe_threshold_sugar": _to_native(food_row.get('safe_threshold_sugar', 110)),
+            "risky_threshold_sugar": _to_native(food_row.get('risky_threshold_sugar', 140)),
+            "risky_reason": _to_native(food_row.get('risky_reason')),
+            "recommended_alternatives": _to_native(food_row.get('recommended_alternatives')),
+        }
+
+        # Additional descriptive fields
+        descriptors = {}
+        for k in ['food_id','food_type','cuisine_region','meal_time_category','meal_time_fit','vitamins_minerals_info','dietitian_notes','portion_adjustment']:
+            if k in food_row.index:
+                descriptors[k] = _to_native(food_row.get(k))
+
+        # Full row as key -> value (stringified keys as-is)
+        raw = { str(k): _to_native(v) for k, v in food_row.to_dict().items() }
+
+        # Backward-compatible top-level shortcuts expected by older UI
+        shortcuts = {
+            "calories": nutritional_info.get('calories_kcal'),
+            "carbs": nutritional_info.get('carbs_g'),
+            "protein": nutritional_info.get('protein_g'),
+            "fat": nutritional_info.get('fat_g'),
+            "fiber": nutritional_info.get('fiber_g'),
+            "glycemicIndex": nutritional_info.get('glycemic_index'),
+            "glycemic_load": nutritional_info.get('glycemic_load'),
+        }
+
         return {
             "name": food_name,
-            "nutritional_info": {
-                "calories_per_100g": float(food_row.get('calories_kcal', 0)),
-                "carbs_g": float(food_row.get('carbs_g', 0)),
-                "protein_g": float(food_row.get('protein_g', 0)),
-                "fat_g": float(food_row.get('fat_g', 0)),
-                "fiber_g": float(food_row.get('fiber_g', 0)),
-                "glycemic_index": float(food_row.get('glycemic_index', 50))
-            },
-            "safety_info": {
-                "avoid_for_diabetic": food_row.get('avoid_for_diabetic', 'No'),
-                "safe_threshold_sugar": float(food_row.get('safe_threshold_sugar', 110)),
-                "risky_threshold_sugar": float(food_row.get('risky_threshold_sugar', 140))
-            }
+            "nutritional_info": nutritional_info,
+            "safety_info": safety_info,
+            "descriptors": descriptors,
+            "raw": raw,
+            **shortcuts
         }
     except HTTPException:
         raise

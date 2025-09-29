@@ -16,6 +16,7 @@ import SafeMealSuggestions from '../components/SafeMealSuggestions';
 import BloodSugarLineChart from '../components/LineChart';
 import MealRiskDonutChart from '../components/DonutChart';
 import HealthPlanModal from '../components/HealthPlanModal';
+import FoodSafetyChecker from '../components/FoodSafetyChecker';
 
 import { collection, query, orderBy, getDocs } from "firebase/firestore";
 import { db, auth, fetchUserLogs, fetchUserProfile } from "../services/firebase";
@@ -644,7 +645,10 @@ const Dashboard = () => {
 
         {/* Smart Meal Recommendations */}
         <div id="meal-recommendations">
-          <SafeMealSuggestions userProfile={userProfile} className="mb-8" />
+          <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
+            <FoodSafetyChecker userProfile={userProfile} />
+            <SafeMealSuggestions userProfile={userProfile} className="mb-8" />
+          </div>
         </div>
 
         {/* Coming Soon Section */}

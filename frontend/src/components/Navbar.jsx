@@ -37,10 +37,12 @@ const Navbar = () => {
     ? [
         { name: 'Dashboard', href: '/dashboard' },
         { name: 'Log Meal', href: '/meal-log' },
+        { name: 'Safety & Nutrition', href: '/safety' },
         { name: 'Profile', href: '/profile' }
       ]
     : [
-        { name: 'Home', href: '/' }
+        { name: 'Home', href: '/' },
+        { name: 'Safety & Nutrition', href: '/safety' }
       ];
 
   // Apply dark mode to document

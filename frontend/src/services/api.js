@@ -36,7 +36,20 @@ export async function getFoodDetails(foodName) {
       throw new Error(errorData.detail || "Failed to get food details");
     }
 
-    return await response.json();
+    const data = await response.json();
+    // Normalize: flatten common fields to top-level for older components
+    const flattened = {
+      name: data.name,
+      ...data,
+      calories: data.calories ?? data?.nutritional_info?.calories_kcal,
+      carbs: data.carbs ?? data?.nutritional_info?.carbs_g,
+      protein: data.protein ?? data?.nutritional_info?.protein_g,
+      fat: data.fat ?? data?.nutritional_info?.fat_g,
+      fiber: data.fiber ?? data?.nutritional_info?.fiber_g,
+      glycemicIndex: data.glycemicIndex ?? data?.nutritional_info?.glycemic_index,
+      glycemic_load: data.glycemic_load ?? data?.nutritional_info?.glycemic_load
+    };
+    return flattened;
   } catch (error) {
     console.error(`Error fetching details for ${foodName}:`, error);
     throw error;
@@ -59,8 +72,15 @@ export async function predictDiabetesFriendly(mealData) {
     });
 
     if (!response.ok) {
-      const errorData = await response.json();
-      throw new Error(`Prediction error: ${errorData.detail || "Unknown error"}`);
+      let detail = 'Unknown error';
+      try {
+        const errorData = await response.json();
+        detail = typeof errorData?.detail === 'string' ? errorData.detail : JSON.stringify(errorData?.detail ?? errorData);
+      } catch (e) {
+        const text = await response.text();
+        detail = text || 'Unknown error';
+      }
+      throw new Error(`Prediction error: ${detail}`);
     }
 
     return await response.json();
@@ -68,6 +88,28 @@ export async function predictDiabetesFriendly(mealData) {
     console.error("Prediction request failed:", error);
     throw error;
   }
+}
+
+/**
+ * Convert backend food details into display rows of [label, value]
+ */
+export function buildNutritionRows(foodDetails) {
+  if (!foodDetails) return [];
+  const n = foodDetails.nutritional_info || {};
+  const rows = [
+    ['Calories (kcal)', n.calories_kcal],
+    ['Carbs (g)', n.carbs_g],
+    ['Protein (g)', n.protein_g],
+    ['Fat (g)', n.fat_g],
+    ['Fiber (g)', n.fiber_g],
+    ['Sugar (g)', n.sugar_g],
+    ['Glycemic Index', n.glycemic_index],
+    ['Glycemic Load', n.glycemic_load],
+    ['Sodium (mg)', n.sodium_mg],
+    ['Serving Size (g)', n.serving_size_g],
+    ['Default Portion', n.default_portion],
+  ];
+  return rows.filter(([_, v]) => v !== undefined && v !== null && v !== '');
 }
 
 /**
