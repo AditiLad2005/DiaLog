@@ -54,6 +54,9 @@ import os
 from typing import Optional, List, Dict, Any
 from pathlib import Path
 from dotenv import load_dotenv
+import requests
+import time
+import hashlib
 
 # Load environment variables
 load_dotenv()
@@ -103,6 +106,103 @@ app.add_middleware(
 BASE_DIR = Path(__file__).resolve().parent
 DATA_DIR = BASE_DIR / "data"
 MODEL_DIR = BASE_DIR / "models"
+
+# ---------------- Translation service config & cache ----------------
+LIBRETRANSLATE_URL = os.getenv("LIBRETRANSLATE_URL", "https://libretranslate.com")
+LIBRETRANSLATE_API_KEY = os.getenv("LIBRETRANSLATE_API_KEY", None)
+TRANSLATION_CACHE_TTL = int(os.getenv("TRANSLATION_CACHE_TTL", "86400"))  # seconds, default 1 day
+
+# simple in-memory cache: key -> {text, ts}
+_translation_cache: Dict[str, Dict[str, Any]] = {}
+
+def _tx_cache_key(text: str, src: str, tgt: str) -> str:
+    h = hashlib.sha256(f"{src}|{tgt}|{text}".encode("utf-8")).hexdigest()
+    return f"tx:{src}:{tgt}:{h}"
+
+def _tx_cache_get(text: str, src: str, tgt: str) -> Optional[str]:
+    k = _tx_cache_key(text, src, tgt)
+    entry = _translation_cache.get(k)
+    if not entry:
+        return None
+    if time.time() - entry["ts"] > TRANSLATION_CACHE_TTL:
+        # expired
+        try:
+            del _translation_cache[k]
+        except Exception:
+            pass
+        return None
+    return entry["text"]
+
+def _tx_cache_set(text: str, translated: str, src: str, tgt: str) -> None:
+    k = _tx_cache_key(text, src, tgt)
+    _translation_cache[k] = {"text": translated, "ts": time.time()}
+
+def _provider_libretranslate(text: str, src: str, tgt: str) -> Optional[str]:
+    try:
+        url = LIBRETRANSLATE_URL.rstrip("/") + "/translate"
+        payload = {
+            "q": text,
+            "source": src,
+            "target": tgt,
+            "format": "text",
+        }
+        if LIBRETRANSLATE_API_KEY:
+            payload["api_key"] = LIBRETRANSLATE_API_KEY
+        r = requests.post(url, json=payload, timeout=8)
+        if r.status_code != 200:
+            return None
+        data = r.json()
+        # Some instances return string, others dict with translatedText
+        if isinstance(data, dict):
+            return data.get("translatedText") or data.get("translation") or None
+        if isinstance(data, str):
+            return data
+        return None
+    except Exception:
+        return None
+
+def _provider_mymemory(text: str, src: str, tgt: str) -> Optional[str]:
+    try:
+        url = "https://api.mymemory.translated.net/get"
+        params = {"q": text, "langpair": f"{src}|{tgt}"}
+        r = requests.get(url, params=params, timeout=8)
+        if r.status_code == 429:
+            return None
+        data = r.json()
+        details = str(data.get("responseDetails") or "")
+        if "MYMEMORY WARNING" in details:
+            return None
+        if data.get("responseStatus") != 200:
+            return None
+        return (data.get("responseData") or {}).get("translatedText")
+    except Exception:
+        return None
+
+def translate_text(text: str, src: str, tgt: str) -> str:
+    if not text or src == tgt:
+        return text
+    # cache first
+    cached = _tx_cache_get(text, src, tgt)
+    if cached is not None:
+        return cached
+    # provider chain: LibreTranslate (configurable/public) -> MyMemory -> fallback original
+    for provider in (_provider_libretranslate, _provider_mymemory):
+        translated = provider(text, src, tgt)
+        if translated and isinstance(translated, str):
+            _tx_cache_set(text, translated, src, tgt)
+            return translated
+    # fallback
+    _tx_cache_set(text, text, src, tgt)
+    return text
+
+class TranslateBatchRequest(BaseModel):
+    texts: List[str]
+    source: str = "en"
+    target: str
+
+class TranslateBatchResponse(BaseModel):
+    translations: List[str]
+
 
 
 # Endpoint to log each meal in the list to Firestore
@@ -226,6 +326,9 @@ class MealRequest(BaseModel):
     time_of_day: str
     portion_size: float
     portion_unit: str
+    # Optional personalization fields
+    user_id: Optional[int] = None
+    diabetes_type: Optional[str] = None
 
 class MealItem(BaseModel):
     meal_taken: str
@@ -261,6 +364,10 @@ class PredictionResponse(BaseModel):
     bmi: float
     nutritional_info: Optional[NutritionalInfo] = None
     recommendations: Optional[List[Recommendation]] = None
+    # Additional safety context
+    glycemic_load: Optional[float] = None
+    personalized_predicted_blood_sugar: Optional[float] = None
+    model_used: Optional[str] = None
 
 class IndividualMealPrediction(BaseModel):
     meal: str
@@ -329,12 +436,109 @@ async def get_foods(search: Optional[str] = Query(None, description="Search term
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Error fetching foods: {str(e)}")
 
+# ---------------- Translation endpoints ----------------
+@app.post("/translate-batch", response_model=TranslateBatchResponse)
+async def translate_batch(req: TranslateBatchRequest):
+    try:
+        if not req.texts:
+            return TranslateBatchResponse(translations=[])
+        # Deduplicate to cut provider calls
+        unique = list(dict.fromkeys(req.texts))
+        mapped: Dict[str, str] = {}
+        for t in unique:
+            mapped[t] = translate_text(t, req.source, req.target)
+        # map in original order
+        out = [mapped.get(t, t) for t in req.texts]
+        return TranslateBatchResponse(translations=out)
+    except Exception as e:
+        # On any error, gracefully fall back to originals
+        return TranslateBatchResponse(translations=[t for t in req.texts])
+
+@app.get("/translate")
+async def translate(text: str, source: str = "en", target: str = "hi"):
+    try:
+        return {"translation": translate_text(text, source, target)}
+    except Exception:
+        return {"translation": text}
+
 def calculate_bmi(weight_kg: float, height_cm: float) -> float:
     # Safety check to prevent division by zero
     if height_cm <= 0 or weight_kg <= 0:
         return 25.0  # Return normal BMI as default
     height_m = height_cm / 100
     return round(weight_kg / (height_m ** 2), 1)
+
+def _safe_float(val: Any, default: float = 0.0) -> float:
+    try:
+        if val is None:
+            return default
+        v = float(val)
+        if v != v:  # NaN check
+            return default
+        return v
+    except Exception:
+        return default
+
+def _compute_gl_for_standard_portion(food_row: pd.Series, portion_g: float = 200.0) -> Optional[float]:
+    """Compute glycemic load for a given portion based on available columns.
+    Prefers explicit glycemic_load column; else uses GI and carbs if available.
+    Returns None if insufficient data.
+    """
+    # Direct glycemic_load per 100g
+    if 'glycemic_load' in food_row.index:
+        gl_per100 = _safe_float(food_row.get('glycemic_load'), None)
+        if gl_per100 is not None:
+            return gl_per100 * (portion_g / 100.0)
+    # Alternate common column names
+    if 'Glycemic Load' in food_row.index:
+        gl_per100 = _safe_float(food_row.get('Glycemic Load'), None)
+        if gl_per100 is not None:
+            return gl_per100 * (portion_g / 100.0)
+    # Compute from GI and carbs
+    gi = None
+    for key in ['glycemic_index', 'GI', 'gi']:
+        if key in food_row.index:
+            gi = _safe_float(food_row.get(key), None)
+            break
+    carbs_g_per100 = None
+    for key in ['carbs_g', 'Carbohydrate (g)', 'carbohydrates_g']:
+        if key in food_row.index:
+            carbs_g_per100 = _safe_float(food_row.get(key), None)
+            break
+    if gi is None or carbs_g_per100 is None:
+        return None
+    carbs_for_portion = carbs_g_per100 * (portion_g / 100.0)
+    # GL formula: (GI * carbs_g)/100
+    return (gi * carbs_for_portion) / 100.0
+
+def _gl_threshold_by_diabetes(diabetes_type: Optional[str]) -> float:
+    """Return GL threshold for a portion based on diabetes type.
+    Defaults to 15.0 when unknown.
+    Gestational: 10.0, Prediabetes: 12.0, Type1: 15.0, Type2: 15.0
+    """
+    dt = (diabetes_type or "").strip().lower()
+    if "gestational" in dt:
+        return 10.0
+    if "prediabetes" in dt or "pre-diabetes" in dt:
+        return 12.0
+    if "type1" in dt or "type 1" in dt:
+        return 15.0
+    if "type2" in dt or "type 2" in dt:
+        return 15.0
+    return 15.0
+
+def _gl_universal_cutoff() -> float:
+    return 15.0
+
+def _gl_badge(gl_value: Optional[float], cutoff: float = 15.0) -> Optional[Dict[str, Any]]:
+    try:
+        if gl_value is None:
+            return None
+        val = float(gl_value)
+        color = "green" if val < 10.0 else ("yellow" if val < cutoff else "red")
+        return {"label": f"GL {val:.1f}", "color": color, "value": val}
+    except Exception:
+        return None
 
 def get_nutritional_info_enhanced(food_name: str, portion_size_g: float, 
                                 portion_features: Dict[str, float]) -> NutritionalInfo:
@@ -511,6 +715,85 @@ async def predict_meal_safety(request: MealRequest):
         # Create response message with explanation
         message = result['explanation']
         confidence = result['confidence']
+
+        # Strict GL threshold per actual portion by diabetes type
+        gl_portion = None
+        try:
+            gl_portion = result.get('portion_features', {}).get('GL_portion')
+        except Exception:
+            gl_portion = None
+        if gl_portion is not None:
+            try:
+                gl_cutoff = _gl_universal_cutoff()
+                if float(gl_portion) >= gl_cutoff:
+                    risk_level = 'high'
+                    is_safe = False
+                    message = f"Glycemic load for this portion (GL: {float(gl_portion):.1f}) meets/exceeds safe threshold (≤ {gl_cutoff:.0f}). Avoid or reduce portion."
+            except Exception:
+                pass
+
+        # Optional personalized override using user's model if available
+        personalized_pred = None
+        model_used = None
+        try:
+            if personalized_recommender is not None and request.user_id is not None:
+                # Build features consistent with personalized model
+                user_features_p = {
+                    'Age': request.age,
+                    'Weight': request.weight_kg,
+                    'Height': request.height_cm,
+                    'BMI': bmi,
+                    'Gender_encoded': 1 if request.gender.lower() == 'male' else 0,
+                    'Diabetes_Type_encoded': 0 if (request.diabetes_type or '').lower() == 'type1' else 1,
+                    'Meal_Time_encoded': {'Breakfast': 0, 'Lunch': 1, 'Dinner': 2, 'Snack': 3}.get(request.time_of_day, 1)
+                }
+                personalized_pred = personalized_recommender.predict_blood_sugar(
+                    request.user_id, request.meal_taken, user_features_p
+                )
+                # Determine model used
+                model_used = 'general'
+                try:
+                    if hasattr(personalized_recommender, 'user_models') and request.user_id in personalized_recommender.user_models:
+                        model_used = 'personal'
+                    else:
+                        dtype = (request.diabetes_type or '').strip()
+                        if hasattr(personalized_recommender, 'general_models_by_diabetes'):
+                            keys = list(getattr(personalized_recommender, 'general_models_by_diabetes', {}).keys())
+                            if any(k.lower() == dtype.lower() for k in keys):
+                                model_used = 'cohort'
+                except Exception:
+                    pass
+
+                # Apply conservative thresholds by diabetes type
+                dtype = (request.diabetes_type or 'Type2').lower()
+                if dtype == 'gestational':
+                    safe_thr, caution_thr = 120, 140
+                elif dtype == 'prediabetes':
+                    safe_thr, caution_thr = 130, 160
+                elif dtype == 'type1':
+                    safe_thr, caution_thr = 140, 180
+                else:  # type2 or others
+                    safe_thr, caution_thr = 140, 170
+
+                # Override risk conservatively based on personalized prediction
+                try:
+                    pb = float(personalized_pred)
+                    if pb > caution_thr:
+                        risk_level = 'high'
+                        is_safe = False
+                        message = f"Personalized prediction {pb:.0f} mg/dL exceeds {caution_thr} for {request.diabetes_type or 'Type2'}. Avoid or choose alternative."
+                    elif pb > safe_thr:
+                        # At least caution
+                        # If already unsafe from GL, keep unsafe
+                        if risk_level != 'high':
+                            risk_level = 'medium'
+                            is_safe = False
+                            message = f"Personalized prediction {pb:.0f} mg/dL above safe threshold {safe_thr}. If consumed, use strict portion control and monitor."
+                except Exception:
+                    pass
+        except Exception:
+            # Personalization should never break baseline safety
+            pass
         
         # Get nutritional information (enhanced with portion awareness)
         nutritional_info = get_nutritional_info_enhanced(
@@ -534,7 +817,10 @@ async def predict_meal_safety(request: MealRequest):
             message=message,
             bmi=bmi,
             nutritional_info=nutritional_info,
-            recommendations=recommendations
+            recommendations=recommendations,
+            glycemic_load=(float(gl_portion) if gl_portion is not None else None),
+            personalized_predicted_blood_sugar=(float(personalized_pred) if personalized_pred is not None else None),
+            model_used=model_used
         )
         
     except ValueError as ve:
@@ -675,6 +961,34 @@ async def predict_multiple_meals(request: MultipleMealRequest):
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Multiple meal prediction error: {str(e)}")
 
+def _to_native(value: Any):
+    """Convert numpy/pandas types to native Python types for JSON serialization."""
+    try:
+        import numpy as _np
+        if value is None:
+            return None
+        if isinstance(value, (_np.floating, _np.float32, _np.float64)):
+            v = float(value)
+            return None if (v != v) else v  # handle NaN
+        if isinstance(value, (_np.integer,)):
+            return int(value)
+    except Exception:
+        pass
+    # Handle pandas NA/NaT
+    try:
+        import pandas as _pd
+        if _pd.isna(value):
+            return None
+    except Exception:
+        pass
+    # Cast common numeric strings
+    try:
+        if isinstance(value, str) and value.strip() == "":
+            return None
+    except Exception:
+        pass
+    return value
+
 @app.get("/food/{food_name}")
 async def get_food_details(food_name: str):
     try:
@@ -685,21 +999,54 @@ async def get_food_details(food_name: str):
             raise HTTPException(status_code=404, detail="Food not found")
         
         food_row = food_df.loc[food_name]
+
+        # Build a comprehensive nutrition dict from known columns if present
+        nutrition_keys = [
+            'calories_kcal', 'carbs_g', 'protein_g', 'fat_g', 'fiber_g', 'sugar_g',
+            'glycemic_index', 'glycemic_load', 'sodium_mg', 'serving_size_g',
+            'default_portion'
+        ]
+        nutritional_info = {}
+        for k in nutrition_keys:
+            if k in food_row.index:
+                nutritional_info[k] = _to_native(food_row.get(k))
+
+        # Safety metadata
+        safety_info = {
+            "avoid_for_diabetic": _to_native(food_row.get('avoid_for_diabetic', 'No')),
+            "safe_threshold_sugar": _to_native(food_row.get('safe_threshold_sugar', 110)),
+            "risky_threshold_sugar": _to_native(food_row.get('risky_threshold_sugar', 140)),
+            "risky_reason": _to_native(food_row.get('risky_reason')),
+            "recommended_alternatives": _to_native(food_row.get('recommended_alternatives')),
+        }
+
+        # Additional descriptive fields
+        descriptors = {}
+        for k in ['food_id','food_type','cuisine_region','meal_time_category','meal_time_fit','vitamins_minerals_info','dietitian_notes','portion_adjustment']:
+            if k in food_row.index:
+                descriptors[k] = _to_native(food_row.get(k))
+
+        # Full row as key -> value (stringified keys as-is)
+        raw = { str(k): _to_native(v) for k, v in food_row.to_dict().items() }
+
+        # Backward-compatible top-level shortcuts expected by older UI
+        shortcuts = {
+            "calories": nutritional_info.get('calories_kcal'),
+            "carbs": nutritional_info.get('carbs_g'),
+            "protein": nutritional_info.get('protein_g'),
+            "fat": nutritional_info.get('fat_g'),
+            "fiber": nutritional_info.get('fiber_g'),
+            "glycemicIndex": nutritional_info.get('glycemic_index'),
+            "glycemic_load": nutritional_info.get('glycemic_load'),
+        }
+
         return {
             "name": food_name,
-            "nutritional_info": {
-                "calories_per_100g": float(food_row.get('calories_kcal', 0)),
-                "carbs_g": float(food_row.get('carbs_g', 0)),
-                "protein_g": float(food_row.get('protein_g', 0)),
-                "fat_g": float(food_row.get('fat_g', 0)),
-                "fiber_g": float(food_row.get('fiber_g', 0)),
-                "glycemic_index": float(food_row.get('glycemic_index', 50))
-            },
-            "safety_info": {
-                "avoid_for_diabetic": food_row.get('avoid_for_diabetic', 'No'),
-                "safe_threshold_sugar": float(food_row.get('safe_threshold_sugar', 110)),
-                "risky_threshold_sugar": float(food_row.get('risky_threshold_sugar', 140))
-            }
+            "nutritional_info": nutritional_info,
+            "safety_info": safety_info,
+            "descriptors": descriptors,
+            "raw": raw,
+            **shortcuts
         }
     except HTTPException:
         raise
@@ -853,9 +1200,9 @@ async def get_personalized_recommendations(request: PersonalizedRecommendationRe
                     food, standard_portion, user_data
                 )
                 
-                # Calculate safety score (higher = safer)
-                risk_scores = {'safe': 1.0, 'caution': 0.6, 'unsafe': 0.1}
-                safety_score = risk_scores.get(prediction['risk_level'], 0.5)
+                # Calculate safety score (higher = safer). If not 'safe', mark very low to be filtered later
+                risk_scores = {'safe': 1.0, 'caution': 0.01, 'unsafe': 0.0}
+                safety_score = risk_scores.get(prediction['risk_level'], 0.0)
                 confidence = prediction['confidence']
                 
                 # Combined score weighted by confidence
@@ -875,9 +1222,25 @@ async def get_personalized_recommendations(request: PersonalizedRecommendationRe
                 # Skip foods that cause errors
                 continue
         
+        # Filter out foods with glycemic load above threshold for standard portion (per diabetes type)
+        gl_cutoff = _gl_universal_cutoff()
+        filtered_scores = []
+        for item in food_scores:
+            try:
+                row = meal_safety_predictor.food_df.loc[item['food_name']]
+                gl200 = _compute_gl_for_standard_portion(row, 200.0)
+                # If GL unknown or >= cutoff, skip conservatively
+                if gl200 is None or gl200 >= gl_cutoff:
+                    continue
+                filtered_scores.append(item)
+            except Exception:
+                # If any error computing GL, be conservative and skip
+                continue
+        # Keep only low-risk (safe) items
+        safe_only = [it for it in filtered_scores if it.get('risk_level') == 'safe']
         # Sort by safety score (highest first) and select top recommendations
-        food_scores.sort(key=lambda x: x['safety_score'], reverse=True)
-        top_recommendations = food_scores[:request.count]
+        safe_only.sort(key=lambda x: x['safety_score'], reverse=True)
+        top_recommendations = safe_only[:request.count]
         
         # Generate dynamic reasons for each recommendation
         recommendations = []
@@ -893,6 +1256,11 @@ async def get_personalized_recommendations(request: PersonalizedRecommendationRe
                 food_rec['risk_level']
             )
             
+            # Skip if GL>cutoff for 200g portion
+            gl200 = _compute_gl_for_standard_portion(food_row, 200.0)
+            if gl200 is None or gl200 >= gl_cutoff:
+                continue
+
             recommendations.append({
                 'name': food_rec['food_name'],
                 'risk_level': food_rec['risk_level'],
@@ -904,6 +1272,8 @@ async def get_personalized_recommendations(request: PersonalizedRecommendationRe
                 'fat': round(food_row.get('Total Fat (g)', 0) * 200 / 100, 1),
                 'fiber': round(food_row.get('Dietary Fiber (g)', 0) * 200 / 100, 1),
                 'glycemicIndex': food_row.get('GI', 50),
+                'glycemicLoad200': gl200,
+                'glBadge': _gl_badge(gl200, gl_cutoff),
                 'portionSize': "200g (1 serving)",
                 'timeOfDay': request.time_of_day,
                 'reasons': dynamic_reasons,
@@ -1064,6 +1434,7 @@ async def get_truly_personalized_recommendations(request: TrulyPersonalizedReque
         }
         
         # Get personalized predictions for each food
+        gl_cutoff = _gl_universal_cutoff()
         food_recommendations = []
         for food in candidate_foods[:30]:  # Limit for performance
             try:
@@ -1077,19 +1448,66 @@ async def get_truly_personalized_recommendations(request: TrulyPersonalizedReque
                     request.user_id, food, predicted_bs
                 )
                 
+                # Determine risk thresholds by diabetes type (conservative)
+                dtype = (request.diabetes_type or 'Type2').lower()
+                if dtype == 'gestational':
+                    safe_thr, caution_thr = 120, 140
+                elif dtype == 'prediabetes':
+                    safe_thr, caution_thr = 130, 160
+                elif dtype == 'type1':
+                    safe_thr, caution_thr = 140, 180
+                else:  # type2 or others
+                    safe_thr, caution_thr = 140, 170
+
                 # Determine risk level based on predicted blood sugar
-                if predicted_bs <= 140:
+                if predicted_bs <= safe_thr:
                     risk_level = "safe"
                     safety_score = 1.0
-                elif predicted_bs <= 180:
+                elif predicted_bs <= caution_thr:
                     risk_level = "caution"
-                    safety_score = 0.6
+                    safety_score = 0.01
                 else:
                     risk_level = "unsafe"
-                    safety_score = 0.2
+                    safety_score = 0.0
                 
                 # Get nutritional info
                 food_row = meal_safety_predictor.food_df.loc[food]
+                # Strict GL threshold by diabetes type: skip when GL for 200g exceeds cutoff
+                gl200 = _compute_gl_for_standard_portion(food_row, 200.0)
+                if gl200 is None or gl200 >= gl_cutoff:
+                    continue
+                # Tailoring multipliers
+                gi = food_row.get('GI', 50) or 50
+                calories200 = round(food_row.get('Calorie', 0) * 200 / 100)
+                carbs200 = round(food_row.get('Carbohydrate (g)', 0) * 200 / 100, 1)
+                fiber200 = round(food_row.get('Dietary Fiber (g)', 0) * 200 / 100, 1)
+                prot200 = round(food_row.get('Protein (g)', 0) * 200 / 100, 1)
+
+                # GI preference by diabetes type
+                gi_mult = 1.0
+                if dtype in ['type2', 'gestational', 'prediabetes']:
+                    if gi <= 55:
+                        gi_mult *= 1.12
+                    elif gi >= 70:
+                        gi_mult *= 0.85
+
+                # BMI-guided calorie moderation
+                bmi_val = request.weight_kg / ((request.height_cm / 100) ** 2) if request.height_cm and request.weight_kg else 24.0
+                bmi_mult = 1.0
+                if bmi_val >= 30:
+                    if calories200 > 300: bmi_mult *= 0.8
+                    if calories200 < 180: bmi_mult *= 1.05
+                elif bmi_val >= 25:
+                    if calories200 > 280: bmi_mult *= 0.9
+                    if calories200 < 200: bmi_mult *= 1.03
+
+                # Macro balance preference: more fiber/protein is better
+                macro_mult = 1.0
+                if fiber200 >= 5: macro_mult *= 1.05
+                if prot200 >= 15: macro_mult *= 1.05
+                if carbs200 >= 60: macro_mult *= 0.9
+
+                safety_score = safety_score * gi_mult * bmi_mult * macro_mult
                 
                 food_recommendations.append({
                     'name': food,
@@ -1097,12 +1515,14 @@ async def get_truly_personalized_recommendations(request: TrulyPersonalizedReque
                     'risk_level': risk_level,
                     'safety_score': safety_score,
                     'personalized_reason': personalized_reason,
-                    'calories': round(food_row.get('Calorie', 0) * 200 / 100),
-                    'carbs': round(food_row.get('Carbohydrate (g)', 0) * 200 / 100, 1),
-                    'protein': round(food_row.get('Protein (g)', 0) * 200 / 100, 1),
+                    'calories': calories200,
+                    'carbs': carbs200,
+                    'protein': prot200,
                     'fat': round(food_row.get('Total Fat (g)', 0) * 200 / 100, 1),
-                    'fiber': round(food_row.get('Dietary Fiber (g)', 0) * 200 / 100, 1),
-                    'glycemicIndex': food_row.get('GI', 50),
+                    'fiber': fiber200,
+                    'glycemicIndex': gi,
+                    'glycemicLoad200': gl200,
+                    'glBadge': _gl_badge(gl200, gl_cutoff),
                     'portionSize': "200g (1 serving)",
                     'timeOfDay': request.time_of_day
                 })
@@ -1110,10 +1530,47 @@ async def get_truly_personalized_recommendations(request: TrulyPersonalizedReque
             except Exception as e:
                 # Skip foods that cause errors
                 continue
-        
-        # Sort by safety score (higher = safer)
-        food_recommendations.sort(key=lambda x: x['safety_score'], reverse=True)
-        top_recommendations = food_recommendations[:request.count]
+
+        # Strict policy: return ONLY low-risk (safe) items
+        safe_items = [r for r in food_recommendations if r['risk_level'] == 'safe']
+        safe_items.sort(key=lambda x: x['safety_score'], reverse=True)
+        top_recommendations = safe_items[:request.count]
+
+        # Firestore analytics logging (non-blocking)
+        try:
+            if FIREBASE_AVAILABLE and firebase_initialized and firestore_db:
+                # Determine model used
+                model_used = 'general'
+                try:
+                    if personalized_recommender and hasattr(personalized_recommender, 'user_models') and request.user_id in personalized_recommender.user_models:
+                        model_used = 'personal'
+                    else:
+                        dtype = (request.diabetes_type or '').strip()
+                        # Match cohort models case-insensitively
+                        if personalized_recommender and hasattr(personalized_recommender, 'general_models_by_diabetes'):
+                            keys = list(getattr(personalized_recommender, 'general_models_by_diabetes', {}).keys())
+                            if any(k.lower() == dtype.lower() for k in keys):
+                                model_used = 'cohort'
+                except Exception:
+                    pass
+                for rec in top_recommendations:
+                    try:
+                        firestore_db.collection('recommendation_analytics').add({
+                            'user_id': request.user_id,
+                            'diabetes_type': request.diabetes_type,
+                            'model_used': model_used,
+                            'food_name': rec.get('name'),
+                            'predicted_blood_sugar': rec.get('predicted_blood_sugar'),
+                            'risk_level': rec.get('risk_level'),
+                            'safety_score': rec.get('safety_score'),
+                            'time_of_day': request.time_of_day,
+                            'createdAt': firestore.SERVER_TIMESTAMP
+                        })
+                    except Exception:
+                        continue
+        except Exception:
+            # Never block recommendations on analytics issues
+            pass
         
         # Get user's personal insights
         personal_insights = personalized_recommender.get_personal_insights(request.user_id)

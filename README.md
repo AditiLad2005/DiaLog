@@ -1,83 +1,149 @@
-# DiaLog - Smart Diabetes Meal Analyzer
+# DiaLog – Smart Diabetes Meal Analyzer
 
-A full-stack web application that helps diabetic patients analyze meal safety using machine learning predictions based on their health profile and food nutritional data.
+DiaLog helps people with diabetes make safer food choices. It analyzes meals using machine learning and provides clear, personalized guidance before and after you eat.
+
+<!-- Badges: Tech, Runtime & License -->
+[![React](https://img.shields.io/badge/React-18-61DAFB?logo=react&logoColor=white)](https://react.dev/)
+[![Tailwind CSS](https://img.shields.io/badge/Tailwind-3-38B2AC?logo=tailwindcss&logoColor=white)](https://tailwindcss.com/)
+[![FastAPI](https://img.shields.io/badge/FastAPI-0.110+-009688?logo=fastapi&logoColor=white)](https://fastapi.tiangolo.com/)
+[![scikit-learn](https://img.shields.io/badge/scikit--learn-1.x-F7931E?logo=scikitlearn&logoColor=white)](https://scikit-learn.org/)
+[![Firebase](https://img.shields.io/badge/Firebase-Admin-FFCA28?logo=firebase&logoColor=black)](https://firebase.google.com/)
+[![Python](https://img.shields.io/badge/Python-3.10%2B-3776AB?logo=python&logoColor=white)](https://www.python.org/)
+[![Node.js](https://img.shields.io/badge/Node.js-16%2B-339933?logo=nodedotjs&logoColor=white)](https://nodejs.org/)
+[![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](https://opensource.org/licenses/MIT)
+
+## Table of Contents
+
+- Features
+- Architecture
+- Tech Stack
+- Getting Started
+- Run (Windows PowerShell)
+- Multilingual Support 🇮🇳
+- Safety & Nutrition Page
+- API Overview
+- Troubleshooting
 
 ## Features
 
-- **Smart Meal Analysis**: ML-powered predictions for meal safety
-- **Personalized Recommendations**: Tailored advice based on user health profile  
-- **Nutritional Information**: Detailed breakdown of calories, carbs, protein, etc.
-- **Real-time Search**: Instant food search with 400+ food items
-- **BMI Calculation**: Automatic BMI calculation and health insights
-- **Risk Assessment**: Clear safety indicators with confidence scores
+- Smart Meal Analysis (ML) with confidence and explanations
+- Truly Personalized Recommendations based on your profile and logs
+- Nutritional Facts: calories, carbs, protein, fats, fiber, GI/GL
+- Real‑time Search: 1,000+ Indian foods with quick filter
+- BMI & Health Insights surfaced in the dashboard
+- Risk Assessment Badges: safe / caution / unsafe
+- Safety & Nutrition Page to check food safety without logging
+- Multilingual UI: popular Indian languages via live translation
 
 ## Architecture
 
-- **Frontend**: React.js with Tailwind CSS
-- **Backend**: FastAPI with Machine Learning model
-- **ML Model**: Random Forest Classifier
-- **Data**: Food Master Dataset with nutritional information
+- Frontend: React 18, Tailwind CSS, Heroicons
+- Backend: FastAPI, Pydantic, Uvicorn, joblib models
+- ML: Random Forest/ensemble models + per‑user personalized models
+- Data: Food Master Dataset (nutritional facts), User Logs (for personalization)
+- Storage/Cloud (optional): Firebase Admin SDK for Firestore logging
 
-## Prerequisites
+See docs for visuals and flows:
 
-- Python 3.8+ 
-- Node.js 16+
+- [Architecture Diagram](docs/architecture-diagram.png)
+- [ML Workflow](docs/ml-workflow.md)
+- [UI Wireframes](docs/ui-wireframes.png)
+
+## Tech Stack
+
+- Frontend: [React](https://react.dev/), [Tailwind CSS](https://tailwindcss.com/), [Heroicons](https://heroicons.com/)
+- Backend: [FastAPI](https://fastapi.tiangolo.com/), [Uvicorn](https://www.uvicorn.org/), [Pydantic](https://docs.pydantic.dev/latest/)
+- ML: [scikit‑learn](https://scikit-learn.org/), [joblib](https://joblib.readthedocs.io/)
+- Optional: [Firebase Admin](https://firebase.google.com/) for Firestore logging
+
+## Getting Started
+
+Prerequisites:
+
+- Python 3.10+ (3.8+ supported)
+- Node.js 16+ (18+ recommended)
 - Git
 
-## Setup & Installation
+### Initial Setup (first time only)
 
-### Initial Setup (First Time Only)
-
-#### Backend Setup
-```bash
+Backend setup
+```powershell
 # Navigate to backend directory
 cd backend
 
 # Create virtual environment (recommended)
 python -m venv venv
 
-# Activate virtual environment
-# Windows:
-venv\Scripts\activate
-# Linux/Mac:
-source venv/bin/activate
+# Activate virtual environment (Windows PowerShell)
+./venv/Scripts/Activate.ps1
 
 # Install Python dependencies
 pip install -r requirements.txt
 
-# Install Node.js dependencies (for Firebase)
+# Optional: Firebase Admin support (for Firestore logging)
 npm install
 ```
 
-#### Frontend Setup
-```bash
+Frontend setup
+```powershell
 # Navigate to frontend directory
-cd frontend
+cd ../frontend
 
 # Install Node.js dependencies
 npm install
 ```
 
-### Quick Start (After Initial Setup)
+## Run (Windows PowerShell)
 
-#### Option 1: Start Both Servers Together
-```bash
+Option 1: Start both servers together
+```powershell
 # From project root directory
-.\start_dev.bat
+./start_dev.bat
 ```
 
-#### Option 2: Start Servers Separately
-```bash
-# Backend Terminal
-cd backend
-python -m uvicorn main:app --reload --host 0.0.0.0 --port 8000
+Option 2: Start servers separately
+```powershell
+# Backend terminal
+cd backend; uvicorn main:app --reload --host 0.0.0.0 --port 8000
 
-# Frontend Terminal (in new terminal)
-cd frontend
-npm start
+# Frontend terminal (new window)
+cd frontend; npm start
 ```
 
-### Access URLs
-- **Backend API**: http://localhost:8000
-- **Frontend**: http://localhost:3000
-- **API Documentation**: http://localhost:8000/docs
+Access URLs
+
+- Backend API: http://localhost:8000
+- Frontend: http://localhost:3000 (or 3001 if 3000 is occupied)
+- API Docs (Swagger): http://localhost:8000/docs
+
+## Multilingual Support 🇮🇳
+
+- Live translation across the app; choose your language in Profile or via the Navbar’s globe button.
+- Popular Indian languages included: Hindi, Bengali, Marathi, Telugu, Tamil, Gujarati, Kannada, Malayalam, Punjabi, Odia, Urdu (plus English).
+- Powered by a free translation API for live content; can be upgraded to i18next + resource files or alternate providers (Bhashini, Sarvam AI, LibreTranslate) as needed.
+
+## Safety & Nutrition Page
+
+Check if a food is Safe / Caution / Unsafe before you eat it – without logging anything.
+
+- UI: Navbar → “Safety & Nutrition” page
+- Flow: type to search → pick a food → click “Check Safety”
+- Backend: uses `/food/{name}` for nutrition facts and `/predict` for ML safety
+- No side effects: nothing is written to Firestore logs from this page
+
+## API Overview
+
+- `GET /health` – server/model status
+- `GET /foods` – list of foods
+- `GET /food/{food_name}` – nutrition for a food
+- `POST /predict` – safety prediction for a meal
+- `POST /recommendations` – ML meal recommendations
+- `POST /truly-personalized-recommendations` – per‑user model recommendations
+
+See also: [docs/api-endpoints.md](docs/api-endpoints.md)
+
+## Troubleshooting
+
+- Frontend on “port 3000 in use”: it will auto‑select 3001.
+- Backend “Could not import module 'main'”: run from `backend` folder or use `uvicorn main:app`.
+- Ensure the backend runs on port `8000` to match `frontend/src/services/api.js`.
