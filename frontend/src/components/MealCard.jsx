@@ -169,7 +169,7 @@ const MealCard = ({
             <div className="grid grid-cols-2 gap-2 text-xs">
               {fastingSugar && (
                 <div className="text-center p-2 bg-gray-100 dark:bg-gray-700 rounded">
-                  <div className="text-gray-600 dark:text-gray-400">Fasting</div>
+                  <div className="text-gray-600 dark:text-gray-400">Pre-meal</div>
                   <div className="font-bold text-gray-900 dark:text-white">{fastingSugar}</div>
                 </div>
               )}

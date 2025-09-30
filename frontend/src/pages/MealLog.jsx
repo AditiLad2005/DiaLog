@@ -30,25 +30,21 @@ const MealLog = () => {
   useEffect(() => {
     const pendingMeals = JSON.parse(localStorage.getItem('pendingMealsForLog') || '[]');
     if (pendingMeals.length > 0) {
-      // Auto-fill form with the first pending meal
-      const meal = pendingMeals[0];
-      setFormData(prev => ({
-        ...prev,
-        meals_taken: [
-          {
-            meal: meal.name,
-            quantity: 1,
-            unit: 'cup',
-            time_of_day: '',
-            ml_prediction: null,
-            showDropdown: false
-          }
-        ]
+      // Auto-fill form with pending meals
+      const mealsToAdd = pendingMeals.map(meal => ({
+        meal: meal.name,
+        quantity: 1,
+        unit: 'cup',
+        showDropdown: false
       }));
       
-      // Remove the used meal from pending list
-      const remainingMeals = pendingMeals.slice(1);
-      localStorage.setItem('pendingMealsForLog', JSON.stringify(remainingMeals));
+      setFormData(prev => ({
+        ...prev,
+        meals_taken: mealsToAdd.length > 0 ? mealsToAdd : prev.meals_taken
+      }));
+      
+      // Clear pending meals
+      localStorage.removeItem('pendingMealsForLog');
     }
   }, []);
 
@@ -72,28 +68,74 @@ const MealLog = () => {
     fastingSugar: '',
     postMealSugar: '',
     notes: '',
+    timeOfMeal: '', // Single time selection for all meals
     meals_taken: [
       {
         meal: '',
         quantity: '',
         unit: 'cup',
-        time_of_day: '',
         showDropdown: false,
       }
     ]
   });
+  
+  const [validationErrors, setValidationErrors] = useState({});
   const [isLoading, setIsLoading] = useState(false);
   const [prediction, setPrediction] = useState(null);
+
+  // Validate individual meal
+  const validateMeal = (meal, index) => {
+    const errors = {};
+    
+    if (!meal.meal.trim()) {
+      errors.meal = 'Meal name is required';
+    }
+    
+    if (!meal.quantity || parseFloat(meal.quantity) <= 0) {
+      errors.quantity = 'Quantity must be greater than 0';
+    }
+    
+    if (!meal.unit) {
+      errors.unit = 'Measurement unit is required';
+    }
+    
+    return errors;
+  };
+
+  // Validate all meals
+  const validateAllMeals = () => {
+    const allErrors = {};
+    let isValid = true;
+
+    formData.meals_taken.forEach((meal, index) => {
+      const mealErrors = validateMeal(meal, index);
+      if (Object.keys(mealErrors).length > 0) {
+        allErrors[`meal_${index}`] = mealErrors;
+        isValid = false;
+      }
+    });
+
+    setValidationErrors(allErrors);
+    return isValid;
+  };
 
   // Save log to Firestore
   const saveLog = async (inputData, result) => {
     try {
       const user = auth.currentUser;
+      
+      // Format meals_taken to include time of day for each meal
+      const formattedMeals = inputData.meals_taken.map(meal => ({
+        ...meal,
+        time_of_day: inputData.timeOfMeal // Use the single selected time for all meals
+      }));
+      
       await saveMealLog({
         userId: user?.uid || "guest",
+        time_of_meal: inputData.timeOfMeal, // Add overall time of meal
         sugar_level_fasting: inputData.fastingSugar,
         sugar_level_post: inputData.postMealSugar,
-        meals_taken: inputData.meals_taken,
+        meals_taken: formattedMeals,
         notes: inputData.notes,
         ...result,
         createdAt: new Date()
@@ -131,6 +173,22 @@ const MealLog = () => {
       );
       return { ...prev, meals_taken: updatedMeals };
     });
+
+    // Real-time validation for the changed field
+    if (field === 'meal' || field === 'quantity' || field === 'unit') {
+      const updatedMeal = { ...formData.meals_taken[idx], [field]: value };
+      const mealErrors = validateMeal(updatedMeal, idx);
+      
+      setValidationErrors(prev => {
+        const newErrors = { ...prev };
+        if (Object.keys(mealErrors).length > 0) {
+          newErrors[`meal_${idx}`] = mealErrors;
+        } else {
+          delete newErrors[`meal_${idx}`];
+        }
+        return newErrors;
+      });
+    }
   };
 
   const handleMealFocus = idx => {
@@ -158,28 +216,59 @@ const MealLog = () => {
       ...prev,
       meals_taken: [
         ...prev.meals_taken,
-        { meal: '', quantity: '', unit: 'cup', time_of_day: '' }
+        { meal: '', quantity: '', unit: 'cup', showDropdown: false }
       ]
     }));
   };
 
   const removeMeal = (idx) => {
-    setFormData(prev => ({
-      ...prev,
-      meals_taken: prev.meals_taken.filter((_, i) => i !== idx)
-    }));
+    if (formData.meals_taken.length > 1) {
+      setFormData(prev => ({
+        ...prev,
+        meals_taken: prev.meals_taken.filter((_, i) => i !== idx)
+      }));
+      
+      // Remove validation errors for this meal
+      setValidationErrors(prev => {
+        const newErrors = { ...prev };
+        delete newErrors[`meal_${idx}`];
+        
+        // Reindex remaining meal errors
+        const reindexedErrors = {};
+        Object.keys(newErrors).forEach(key => {
+          if (key.startsWith('meal_')) {
+            const oldIndex = parseInt(key.split('_')[1]);
+            if (oldIndex > idx) {
+              reindexedErrors[`meal_${oldIndex - 1}`] = newErrors[key];
+            } else if (oldIndex < idx) {
+              reindexedErrors[key] = newErrors[key];
+            }
+          } else {
+            reindexedErrors[key] = newErrors[key];
+          }
+        });
+        
+        return reindexedErrors;
+      });
+    }
   };
 
 
 
   const handleSubmit = async (e) => {
     e.preventDefault();
+    
+    // Validate all meals before submission
+    if (!validateAllMeals()) {
+      return;
+    }
+    
     setIsLoading(true);
     try {
-      // Prepare payload for backend
-      const meal = formData.meals_taken[0];
       // Use user profile if available
       const profile = userProfile || {};
+      
+      // Prepare payload with multiple meals grouped under single time
       const payload = {
         age: parseInt(profile.age) || 35,
         gender: profile.gender || 'Male',
@@ -187,27 +276,38 @@ const MealLog = () => {
         height_cm: parseFloat(profile.height) || 170,
         fasting_sugar: parseFloat(formData.fastingSugar),
         post_meal_sugar: parseFloat(formData.postMealSugar),
-        meal_taken: meal.meal,
-        time_of_day: meal.time_of_day,
-        portion_size: parseFloat(meal.quantity),
-        portion_unit: meal.unit
+        time_of_day: formData.timeOfMeal,
+        meals: formData.meals_taken.map(meal => ({
+          meal_taken: meal.meal,
+          portion_size: parseFloat(meal.quantity),
+          portion_unit: meal.unit
+        }))
       };
-  // Call backend for prediction
-  const predictionResult = await (await import('../services/api')).predictDiabetesFriendly(payload);
+      
+      // Call backend for prediction (will need to update API to handle multiple meals)
+      const predictionResult = await (await import('../services/api')).predictMultipleMeals(payload);
   setPrediction(predictionResult);
-  // Extract risk level for dashboard sync (backend returns risk_level)
+  
+  // Extract risk level for dashboard sync (handle both single and multiple meal responses)
   let riskLevel = '';
-  if (predictionResult.risk_level) riskLevel = predictionResult.risk_level;
-  else if (predictionResult.risk) riskLevel = predictionResult.risk;
-  else if (predictionResult.recommendations && predictionResult.recommendations[0]?.risk_level) riskLevel = predictionResult.recommendations[0].risk_level;
+  if (predictionResult.overall_risk_level) {
+    riskLevel = predictionResult.overall_risk_level; // Multiple meals response
+  } else if (predictionResult.risk_level) {
+    riskLevel = predictionResult.risk_level; // Single meal response
+  } else if (predictionResult.risk) {
+    riskLevel = predictionResult.risk;
+  } else if (predictionResult.recommendations && predictionResult.recommendations[0]?.risk_level) {
+    riskLevel = predictionResult.recommendations[0].risk_level;
+  }
   
   // Ensure prediction has risk field for dashboard compatibility
   const enhancedPrediction = {
     ...predictionResult,
-    risk: riskLevel
+    risk: riskLevel,
+    risk_level: riskLevel // Ensure both fields exist
   };
   
-  // Save log to Firestore with riskLevel at top level and prediction.risk
+  // Save log to Firestore with enhanced prediction
   await saveLog(formData, { prediction: enhancedPrediction, riskLevel });
     } catch (err) {
       console.error('Prediction or log error:', err);
@@ -219,7 +319,12 @@ const MealLog = () => {
   // ...existing code...
 
   // Add isFormValid for form validation
-  const isFormValid = formData.fastingSugar && formData.postMealSugar && formData.meals_taken.every(m => m.meal && m.quantity && m.unit && m.time_of_day);
+  const isFormValid = formData.fastingSugar && 
+                     formData.postMealSugar && 
+                     formData.timeOfMeal &&
+                     formData.meals_taken.every(m => m.meal && m.quantity && m.unit) &&
+                     formData.meals_taken.every(m => parseFloat(m.quantity) > 0) &&
+                     Object.keys(validationErrors).length === 0;
 
   return (
     <div className="min-h-screen bg-primary-50 dark:bg-gray-900 py-12 transition-all duration-300">
@@ -246,10 +351,10 @@ const MealLog = () => {
               </h2>
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-6">
                 <div>
-                  <label htmlFor="fastingSugar" className="block text-sm font-medium dark:text-white">Fasting Sugar (mg/dL)</label>
+                  <label htmlFor="fastingSugar" className="block text-sm font-medium dark:text-white">Pre-meal Sugar (mg/dL)</label>
                   <input type="number" id="fastingSugar" name="fastingSugar"
                     value={formData.fastingSugar} onChange={handleInputChange}
-                    className="block w-full px-4 py-3 border rounded-xl dark:bg-gray-900 dark:text-white placeholder:text-gray-400 placeholder:dark:text-gray-500 mt-2" required placeholder="Fasting Sugar (mg/dL)" />
+                    className="block w-full px-4 py-3 border rounded-xl dark:bg-gray-900 dark:text-white placeholder:text-gray-400 placeholder:dark:text-gray-500 mt-2" required placeholder="Pre-meal Sugar (mg/dL)" />
                 </div>
                 <div>
                   <label htmlFor="postMealSugar" className="block text-sm font-medium dark:text-white">Post-Meal Sugar (mg/dL)</label>
@@ -265,66 +370,177 @@ const MealLog = () => {
               <h2 className="text-xl font-semibold flex items-center">
                 <CakeIcon className="h-6 w-6 mr-2 text-primary-600" /> <span className="dark:text-white">Meal Information</span>
               </h2>
-              {formData.meals_taken.map((meal, idx) => (
-                <div key={idx} className="grid grid-cols-1 sm:grid-cols-4 gap-4 mb-4">
-                  <div>
-                    <label className="block text-sm font-medium dark:text-white">Meal</label>
-                    <div className="relative">
-                      <input
-                        type="text"
-                        value={meal.meal}
-                        onChange={e => handleMealChange(idx, 'meal', e.target.value)}
-                        onFocus={() => handleMealFocus(idx)}
-                        onBlur={() => handleMealBlur(idx)}
-                        className="block w-full px-4 py-3 border rounded-xl dark:bg-gray-900 dark:text-white placeholder:text-gray-400 placeholder:dark:text-gray-500 mt-2"
-                        placeholder={isLoadingMeals ? 'Loading meals...' : 'Type to search meal'}
-                        autoComplete="off"
-                        required
-                      />
-                      {meal.showDropdown && meal.meal && mealOptions.length > 0 && (
-                        <ul className="absolute z-10 w-full bg-white dark:bg-gray-900 border rounded-xl mt-1 max-h-40 overflow-y-auto shadow-lg">
-                          {mealOptions.filter(opt => opt.toLowerCase().includes(meal.meal.toLowerCase())).slice(0, 8).map(opt => (
-                            <li
-                              key={opt}
-                              className="px-4 py-2 cursor-pointer text-white bg-white hover:bg-primary-100 dark:bg-gray-900 dark:hover:bg-primary-900/20"
-                              style={{ color: '#fff' }}
-                              onMouseDown={() => handleMealChange(idx, 'meal', opt)}
-                            >
-                              {opt}
-                            </li>
-                          ))}
-                        </ul>
-                      )}
-                    </div>
-                  </div>
-                  <div>
-                    <label className="block text-sm font-medium dark:text-white">Quantity</label>
-                    <input type="number" value={meal.quantity} min="1" onChange={e => handleMealChange(idx, 'quantity', e.target.value)}
-                      className="block w-full px-4 py-3 border rounded-xl dark:bg-gray-900 dark:text-white placeholder:text-gray-400 placeholder:dark:text-gray-500 mt-2" placeholder="Amount" required />
-                  </div>
-                  <div>
-                    <label className="block text-sm font-medium dark:text-white">Unit</label>
-                    <select value={meal.unit} onChange={e => handleMealChange(idx, 'unit', e.target.value)}
-                      className="block w-full px-4 py-3 border rounded-xl dark:bg-gray-900 dark:text-white placeholder:text-gray-400 placeholder:dark:text-gray-500 mt-2">
-                      {portionUnits.map(unit => <option key={unit.value} value={unit.value} className="dark:text-white">{unit.label}</option>)}
-                    </select>
-                  </div>
-                  <div>
-                    <label className="block text-sm font-medium dark:text-white">Time of Day</label>
-                    <select value={meal.time_of_day} onChange={e => handleMealChange(idx, 'time_of_day', e.target.value)}
-                      className="block w-full px-4 py-3 border rounded-xl dark:bg-gray-900 dark:text-white placeholder:text-gray-400 placeholder:dark:text-gray-500 mt-2" required>
-                      <option value="" className="dark:text-white">Select time of day</option>
-                      {timeOptions.map(time => <option key={time} value={time} className="dark:text-white">{time}</option>)}
-                    </select>
-                  </div>
-                  {formData.meals_taken.length > 1 && (
-                    <button type="button" onClick={() => removeMeal(idx)} className="text-danger-600 dark:text-danger-400 text-xs mt-2">Remove</button>
+
+              {/* Time of Meal Selector - Moved to top */}
+              <div className="mb-6">
+                <label htmlFor="timeOfMeal" className="block text-sm font-medium text-neutral-700 dark:text-neutral-300 mb-2">
+                  Time of Meal *
+                </label>
+                <select
+                  id="timeOfMeal"
+                  name="timeOfMeal"
+                  value={formData.timeOfMeal}
+                  onChange={handleInputChange}
+                  className="w-full px-4 py-3 rounded-xl border border-neutral-300 dark:border-neutral-600 bg-white dark:bg-gray-700 text-neutral-900 dark:text-white focus:ring-2 focus:ring-primary-500 focus:border-transparent transition-all duration-200"
+                  required
+                >
+                  <option value="">Select time of day</option>
+                  {timeOptions.map(time => (
+                    <option key={time} value={time} className="dark:text-white">{time}</option>
+                  ))}
+                </select>
+              </div>
+
+              {/* Multiple Meal Entries */}
+              <div className="space-y-4">
+                <div className="flex items-center justify-between">
+                  <h3 className="text-lg font-medium text-neutral-800 dark:text-neutral-200">
+                    Add meals for this time slot:
+                  </h3>
+                  {formData.timeOfMeal && (
+                    <span className="text-sm text-primary-600 dark:text-primary-400 font-medium">
+                      {formData.timeOfMeal}
+                    </span>
                   )}
                 </div>
-              ))}
-              <button type="button" onClick={addMeal} className="mt-2 px-4 py-2 rounded-xl bg-primary-100 dark:bg-primary-900/20 text-primary-700 dark:text-primary-400 font-semibold flex items-center">
-                <span className="mr-2">➕</span> Add More Food
-              </button>
+                {formData.meals_taken.map((meal, idx) => (
+                  <div key={idx} className="border border-neutral-200 dark:border-neutral-600 rounded-xl p-4 space-y-4">
+                    <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+                      {/* Meal Name */}
+                      <div>
+                        <label className="block text-sm font-medium text-neutral-700 dark:text-neutral-300 mb-2">
+                          Meal Name *
+                        </label>
+                        <div className="relative">
+                          <input
+                            type="text"
+                            value={meal.meal}
+                            onChange={e => handleMealChange(idx, 'meal', e.target.value)}
+                            onFocus={() => handleMealFocus(idx)}
+                            onBlur={() => handleMealBlur(idx)}
+                            className={`w-full px-4 py-3 rounded-xl border ${
+                              validationErrors[`meal_${idx}`]?.meal 
+                                ? 'border-danger-500 focus:ring-danger-500' 
+                                : 'border-neutral-300 dark:border-neutral-600 focus:ring-primary-500'
+                            } bg-white dark:bg-gray-700 text-neutral-900 dark:text-white focus:ring-2 focus:border-transparent transition-all duration-200`}
+                            placeholder={isLoadingMeals ? 'Loading meals...' : 'Type to search meal'}
+                            autoComplete="off"
+                            required
+                          />
+                          {meal.showDropdown && meal.meal && mealOptions.length > 0 && (
+                            <ul className="absolute z-10 w-full bg-white dark:bg-gray-800 border border-neutral-200 dark:border-neutral-600 rounded-xl mt-1 max-h-40 overflow-y-auto shadow-lg">
+                              {mealOptions.filter(opt => opt.toLowerCase().includes(meal.meal.toLowerCase())).slice(0, 8).map(opt => (
+                                <li
+                                  key={opt}
+                                  className="px-4 py-2 cursor-pointer text-neutral-900 dark:text-white hover:bg-primary-100 dark:hover:bg-primary-900/20"
+                                  onMouseDown={() => handleMealChange(idx, 'meal', opt)}
+                                >
+                                  {opt}
+                                </li>
+                              ))}
+                            </ul>
+                          )}
+                        </div>
+                        {validationErrors[`meal_${idx}`]?.meal && (
+                          <p className="mt-1 text-sm text-danger-600 dark:text-danger-400">
+                            {validationErrors[`meal_${idx}`].meal}
+                          </p>
+                        )}
+                      </div>
+
+                      {/* Quantity with increment only */}
+                      <div>
+                        <label className="block text-sm font-medium text-neutral-700 dark:text-neutral-300 mb-2">
+                          Quantity *
+                        </label>
+                        <div className="flex">
+                          <input
+                            type="number"
+                            value={meal.quantity}
+                            min="0.1"
+                            step="0.5"
+                            onChange={e => handleMealChange(idx, 'quantity', e.target.value)}
+                            className={`flex-1 px-4 py-3 rounded-l-xl border ${
+                              validationErrors[`meal_${idx}`]?.quantity 
+                                ? 'border-danger-500 focus:ring-danger-500' 
+                                : 'border-neutral-300 dark:border-neutral-600 focus:ring-primary-500'
+                            } bg-white dark:bg-gray-700 text-neutral-900 dark:text-white text-center focus:ring-2 focus:border-transparent transition-all duration-200`}
+                            placeholder="Amount"
+                            required
+                          />
+                          <button
+                            type="button"
+                            onClick={() => {
+                              const currentQty = parseFloat(meal.quantity) || 0;
+                              handleMealChange(idx, 'quantity', (currentQty + 0.5).toString());
+                            }}
+                            className="px-4 py-3 bg-primary-600 hover:bg-primary-700 text-white rounded-r-xl transition-colors duration-200 flex items-center justify-center"
+                            title="Add 0.5"
+                          >
+                            <span className="font-bold text-lg">+</span>
+                          </button>
+                        </div>
+                        {validationErrors[`meal_${idx}`]?.quantity && (
+                          <p className="mt-1 text-sm text-danger-600 dark:text-danger-400">
+                            {validationErrors[`meal_${idx}`].quantity}
+                          </p>
+                        )}
+                      </div>
+
+                      {/* Unit */}
+                      <div>
+                        <label className="block text-sm font-medium text-neutral-700 dark:text-neutral-300 mb-2">
+                          Unit *
+                        </label>
+                        <select 
+                          value={meal.unit} 
+                          onChange={e => handleMealChange(idx, 'unit', e.target.value)}
+                          className={`w-full px-4 py-3 rounded-xl border ${
+                            validationErrors[`meal_${idx}`]?.unit 
+                              ? 'border-danger-500 focus:ring-danger-500' 
+                              : 'border-neutral-300 dark:border-neutral-600 focus:ring-primary-500'
+                          } bg-white dark:bg-gray-700 text-neutral-900 dark:text-white focus:ring-2 focus:border-transparent transition-all duration-200`}
+                        >
+                          {portionUnits.map(unit => (
+                            <option key={unit.value} value={unit.value} className="dark:text-white">
+                              {unit.label}
+                            </option>
+                          ))}
+                        </select>
+                        {validationErrors[`meal_${idx}`]?.unit && (
+                          <p className="mt-1 text-sm text-danger-600 dark:text-danger-400">
+                            {validationErrors[`meal_${idx}`].unit}
+                          </p>
+                        )}
+                      </div>
+                    </div>
+
+                    {/* Remove button */}
+                    {formData.meals_taken.length > 1 && (
+                      <div className="flex justify-end">
+                        <button 
+                          type="button" 
+                          onClick={() => removeMeal(idx)} 
+                          className="text-danger-600 dark:text-danger-400 hover:text-danger-700 dark:hover:text-danger-300 font-medium flex items-center"
+                        >
+                          <span className="mr-1">🗑️</span> Remove this meal
+                        </button>
+                      </div>
+                    )}
+                  </div>
+                ))}
+                
+                {/* Add Another Meal Button */}
+                <div className="flex justify-center">
+                  <button 
+                    type="button" 
+                    onClick={addMeal} 
+                    className="px-6 py-3 rounded-xl bg-primary-100 dark:bg-primary-900/20 text-primary-700 dark:text-primary-400 hover:bg-primary-200 dark:hover:bg-primary-900/40 font-semibold flex items-center transition-all duration-200"
+                  >
+                    <span className="mr-2">➕</span> Add Another Meal
+                  </button>
+                </div>
+              </div>
             </div>
 
             {/* Notes */}
@@ -333,17 +549,80 @@ const MealLog = () => {
 
             {/* Prediction */}
             {prediction && (
-              <div className={`border rounded-xl p-6 ${prediction.color}`}>
-                <h3 className="font-semibold mb-2 text-white">Health Assessment</h3>
-                <p className="text-sm mb-4 text-white">{prediction.message}</p>
-                <ul className="text-sm list-disc pl-5 text-white">
-                  {prediction.recommendations.map((rec, idx) => (
-                    <li key={idx}>
-                      {rec.name ? <strong>{rec.name}: </strong> : null}
-                      {rec.reason || rec}
-                    </li>
-                  ))}
-                </ul>
+              <div className="space-y-4">
+                {/* Overall Assessment */}
+                <div className={`border rounded-xl p-6 ${
+                  prediction.overall_risk_level === 'high' || prediction.risk_level === 'high' 
+                    ? 'bg-danger-50 border-danger-200 dark:bg-danger-900/20 dark:border-danger-800'
+                    : prediction.overall_risk_level === 'moderate' || prediction.risk_level === 'moderate' 
+                    ? 'bg-warning-50 border-warning-200 dark:bg-warning-900/20 dark:border-warning-800'
+                    : 'bg-success-50 border-success-200 dark:bg-success-900/20 dark:border-success-800'
+                }`}>
+                  <h3 className={`font-semibold mb-2 ${
+                    prediction.overall_risk_level === 'high' || prediction.risk_level === 'high'
+                      ? 'text-danger-800 dark:text-danger-200'
+                      : prediction.overall_risk_level === 'moderate' || prediction.risk_level === 'moderate'
+                      ? 'text-warning-800 dark:text-warning-200'
+                      : 'text-success-800 dark:text-success-200'
+                  }`}>
+                    Health Assessment
+                  </h3>
+                  <p className={`text-sm mb-4 ${
+                    prediction.overall_risk_level === 'high' || prediction.risk_level === 'high'
+                      ? 'text-danger-700 dark:text-danger-300'
+                      : prediction.overall_risk_level === 'moderate' || prediction.risk_level === 'moderate'
+                      ? 'text-warning-700 dark:text-warning-300'
+                      : 'text-success-700 dark:text-success-300'
+                  }`}>
+                    {prediction.message}
+                  </p>
+                  
+                  {/* Individual Meal Results (for multiple meals) */}
+                  {prediction.predictions && (
+                    <div className="mb-4">
+                      <h4 className={`text-sm font-medium mb-2 ${
+                        prediction.overall_risk_level === 'high' || prediction.risk_level === 'high'
+                          ? 'text-danger-800 dark:text-danger-200'
+                          : prediction.overall_risk_level === 'moderate' || prediction.risk_level === 'moderate'
+                          ? 'text-warning-800 dark:text-warning-200'
+                          : 'text-success-800 dark:text-success-200'
+                      }`}>
+                        Individual Meal Analysis:
+                      </h4>
+                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                        {prediction.predictions.map((pred, idx) => (
+                          <div key={idx} className={`text-xs p-2 rounded-lg ${
+                            pred.risk_level === 'high'
+                              ? 'bg-danger-100 dark:bg-danger-900/30 text-danger-800 dark:text-danger-200'
+                              : pred.risk_level === 'moderate'
+                              ? 'bg-warning-100 dark:bg-warning-900/30 text-warning-800 dark:text-warning-200'
+                              : 'bg-success-100 dark:bg-success-900/30 text-success-800 dark:text-success-200'
+                          }`}>
+                            <span className="font-medium">{pred.meal}:</span> {pred.risk_level} risk
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+                  
+                  {/* Recommendations */}
+                  {prediction.recommendations && prediction.recommendations.length > 0 && (
+                    <ul className={`text-sm list-disc pl-5 ${
+                      prediction.overall_risk_level === 'high' || prediction.risk_level === 'high'
+                        ? 'text-danger-700 dark:text-danger-300'
+                        : prediction.overall_risk_level === 'moderate' || prediction.risk_level === 'moderate'
+                        ? 'text-warning-700 dark:text-warning-300'
+                        : 'text-success-700 dark:text-success-300'
+                    }`}>
+                      {prediction.recommendations.map((rec, idx) => (
+                        <li key={idx}>
+                          {rec.name ? <strong>{rec.name}: </strong> : null}
+                          {rec.reason || rec}
+                        </li>
+                      ))}
+                    </ul>
+                  )}
+                </div>
               </div>
             )}
 

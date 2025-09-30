@@ -22,6 +22,46 @@ const Profile = () => {
   const [bmi, setBmi] = useState(null);
   const [isLoading, setIsLoading] = useState(false);
   const [isEditing, setIsEditing] = useState(false);
+  const [validationErrors, setValidationErrors] = useState({
+    age: '',
+    height: '',
+    weight: ''
+  });
+
+  const validateField = (name, value) => {
+    let error = '';
+    
+    switch (name) {
+      case 'age':
+        if (value === '') {
+          error = 'Age is required';
+        } else if (isNaN(value) || value < 5) {
+          error = 'Age must be at least 5 years';
+        } else if (value > 120) {
+          error = 'Age must be less than 120 years';
+        }
+        break;
+        
+      case 'height':
+        if (value === '') {
+          error = 'Height is required';
+        } else if (isNaN(value) || parseFloat(value) <= 0) {
+          error = 'Height must be greater than 0';
+        }
+        break;
+        
+      case 'weight':
+        if (value === '') {
+          error = 'Weight is required';
+        } else if (isNaN(value) || parseFloat(value) <= 0) {
+          error = 'Weight must be greater than 0';
+        }
+        break;
+    }
+    
+    return error;
+  };
+
   // Fetch profile data on mount
   React.useEffect(() => {
     const fetchProfile = async () => {
@@ -29,10 +69,19 @@ const Profile = () => {
       if (user) {
         let profile = await fetchUserProfile(user.uid);
         if (profile) {
-          setFormData({
+          const newFormData = {
             ...profile,
             email: user.email || profile.email || ''
+          };
+          setFormData(newFormData);
+          
+          // Validate existing data
+          const newErrors = {};
+          ['age', 'height', 'weight'].forEach(field => {
+            const error = validateField(field, newFormData[field] || '');
+            if (error) newErrors[field] = error;
           });
+          setValidationErrors(newErrors);
         } else {
           setFormData(prev => ({
             ...prev,
@@ -73,10 +122,21 @@ const Profile = () => {
 
   const handleInputChange = (e) => {
     const { name, value } = e.target;
+    
+    // Update form data
     setFormData(prev => ({
       ...prev,
       [name]: value
     }));
+    
+    // Validate the field and update errors
+    if (['age', 'height', 'weight'].includes(name)) {
+      const error = validateField(name, value);
+      setValidationErrors(prev => ({
+        ...prev,
+        [name]: error
+      }));
+    }
   };
 
   const getBmiCategory = (bmiValue) => {
@@ -88,6 +148,19 @@ const Profile = () => {
 
   const handleSubmit = async (e) => {
     e.preventDefault();
+    
+    // Final validation check before submission
+    const finalErrors = {};
+    ['age', 'height', 'weight'].forEach(field => {
+      const error = validateField(field, formData[field] || '');
+      if (error) finalErrors[field] = error;
+    });
+    
+    if (Object.keys(finalErrors).length > 0) {
+      setValidationErrors(finalErrors);
+      return;
+    }
+    
     setIsLoading(true);
     try {
       const user = auth.currentUser;
@@ -104,7 +177,15 @@ const Profile = () => {
     setIsLoading(false);
   };
 
-  const isFormValid = formData.name && formData.email && formData.age && formData.gender;
+  const isFormValid = formData.name && 
+                      formData.email && 
+                      formData.age && 
+                      formData.gender && 
+                      formData.height && 
+                      formData.weight &&
+                      !validationErrors.age && 
+                      !validationErrors.height && 
+                      !validationErrors.weight;
 
   return (
     <div className="min-h-screen bg-primary-50 dark:bg-gray-900 py-12 transition-all duration-300">
@@ -175,13 +256,22 @@ const Profile = () => {
                     name="age"
                     value={formData.age}
                     onChange={handleInputChange}
-                    className="w-full px-4 py-3 rounded-xl border border-neutral-300 dark:border-neutral-600 bg-white dark:bg-gray-700 text-neutral-900 dark:text-white focus:ring-2 focus:ring-primary-500 focus:border-transparent transition-all duration-200"
+                    className={`w-full px-4 py-3 rounded-xl border ${
+                      validationErrors.age 
+                        ? 'border-danger-500 focus:ring-danger-500' 
+                        : 'border-neutral-300 dark:border-neutral-600 focus:ring-primary-500'
+                    } bg-white dark:bg-gray-700 text-neutral-900 dark:text-white focus:ring-2 focus:border-transparent transition-all duration-200`}
                     placeholder="Your age"
-                    min="1"
+                    min="5"
                     max="120"
                     required
                     disabled={!isEditing}
                   />
+                  {validationErrors.age && (
+                    <p className="mt-1 text-sm text-danger-600 dark:text-danger-400">
+                      {validationErrors.age}
+                    </p>
+                  )}
                 </div>
 
                 <div>
@@ -224,8 +314,14 @@ const Profile = () => {
                       name="height"
                       value={formData.height}
                       onChange={handleInputChange}
-                      className="flex-1 px-4 py-3 rounded-xl border border-neutral-300 dark:border-neutral-600 bg-white dark:bg-gray-700 text-neutral-900 dark:text-white focus:ring-2 focus:ring-primary-500 focus:border-transparent transition-all duration-200"
+                      className={`flex-1 px-4 py-3 rounded-xl border ${
+                        validationErrors.height 
+                          ? 'border-danger-500 focus:ring-danger-500' 
+                          : 'border-neutral-300 dark:border-neutral-600 focus:ring-primary-500'
+                      } bg-white dark:bg-gray-700 text-neutral-900 dark:text-white focus:ring-2 focus:border-transparent transition-all duration-200`}
                       placeholder="Height"
+                      min="0.1"
+                      step="0.1"
                       required
                       disabled={!isEditing}
                     />
@@ -240,6 +336,11 @@ const Profile = () => {
                       <option value="ft">ft</option>
                     </select>
                   </div>
+                  {validationErrors.height && (
+                    <p className="mt-1 text-sm text-danger-600 dark:text-danger-400">
+                      {validationErrors.height}
+                    </p>
+                  )}
                 </div>
 
                 <div>
@@ -252,8 +353,14 @@ const Profile = () => {
                       name="weight"
                       value={formData.weight}
                       onChange={handleInputChange}
-                      className="flex-1 px-4 py-3 rounded-xl border border-neutral-300 dark:border-neutral-600 bg-white dark:bg-gray-700 text-neutral-900 dark:text-white focus:ring-2 focus:ring-primary-500 focus:border-transparent transition-all duration-200"
+                      className={`flex-1 px-4 py-3 rounded-xl border ${
+                        validationErrors.weight 
+                          ? 'border-danger-500 focus:ring-danger-500' 
+                          : 'border-neutral-300 dark:border-neutral-600 focus:ring-primary-500'
+                      } bg-white dark:bg-gray-700 text-neutral-900 dark:text-white focus:ring-2 focus:border-transparent transition-all duration-200`}
                       placeholder="Weight"
+                      min="0.1"
+                      step="0.1"
                       required
                       disabled={!isEditing}
                     />
@@ -268,6 +375,11 @@ const Profile = () => {
                       <option value="lbs">lbs</option>
                     </select>
                   </div>
+                  {validationErrors.weight && (
+                    <p className="mt-1 text-sm text-danger-600 dark:text-danger-400">
+                      {validationErrors.weight}
+                    </p>
+                  )}
                 </div>
               </div>
 

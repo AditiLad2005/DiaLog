@@ -17,8 +17,7 @@ import BloodSugarLineChart from '../components/LineChart';
 import MealRiskDonutChart from '../components/DonutChart';
 import HealthPlanModal from '../components/HealthPlanModal';
 
-import { collection, query, orderBy, getDocs } from "firebase/firestore";
-import { db, auth, fetchUserLogs, fetchUserProfile } from "../services/firebase";
+import { auth, fetchUserLogs, fetchUserProfile } from "../services/firebase";
 
 const Dashboard = () => {
   const [bloodSugarData, setBloodSugarData] = useState(null);
@@ -316,7 +315,7 @@ const Dashboard = () => {
                 <ChartBarIcon className="h-6 w-6 text-primary-600 dark:text-primary-400" />
               </div>
               <div className="ml-4">
-                <p className="text-sm text-neutral-600 dark:text-neutral-400">Avg Fasting</p>
+                <p className="text-sm text-neutral-600 dark:text-neutral-400">Avg Pre-meal</p>
                 <p className="text-2xl font-bold text-neutral-900 dark:text-white">{stats.averageFasting}</p>
                 <p className="text-xs text-neutral-500 dark:text-neutral-500">mg/dL</p>
               </div>

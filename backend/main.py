@@ -227,6 +227,21 @@ class MealRequest(BaseModel):
     portion_size: float
     portion_unit: str
 
+class MealItem(BaseModel):
+    meal_taken: str
+    portion_size: float
+    portion_unit: str
+
+class MultipleMealRequest(BaseModel):
+    age: int
+    gender: str
+    weight_kg: float
+    height_cm: float
+    fasting_sugar: float
+    post_meal_sugar: float
+    time_of_day: str
+    meals: List[MealItem]
+
 class NutritionalInfo(BaseModel):
     calories: float
     carbs_g: float
@@ -245,6 +260,22 @@ class PredictionResponse(BaseModel):
     message: str
     bmi: float
     nutritional_info: Optional[NutritionalInfo] = None
+    recommendations: Optional[List[Recommendation]] = None
+
+class IndividualMealPrediction(BaseModel):
+    meal: str
+    is_safe: bool
+    confidence: float
+    risk_level: str
+    nutritional_info: Optional[NutritionalInfo] = None
+
+class MultipleMealResponse(BaseModel):
+    is_safe: bool
+    overall_risk_level: str
+    message: str
+    bmi: float
+    confidence: float
+    predictions: List[IndividualMealPrediction]
     recommendations: Optional[List[Recommendation]] = None
 
 class HealthResponse(BaseModel):
@@ -512,6 +543,137 @@ async def predict_meal_safety(request: MealRequest):
         raise
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Prediction error: {str(e)}")
+
+@app.post("/predict-multiple", response_model=MultipleMealResponse)
+async def predict_multiple_meals(request: MultipleMealRequest):
+    """
+    Predict safety for multiple meals consumed at the same time.
+    """
+    try:
+        global meal_safety_predictor
+        
+        if meal_safety_predictor is None:
+            raise HTTPException(status_code=503, detail="Prediction system not initialized")
+        
+        # Convert portion unit to grams mapping
+        portion_unit_to_grams = {
+            'cup': 200, 'bowl': 250, 'plate': 300, 'piece': 100,
+            'slice': 50, 'spoon': 15, 'glass': 250, 'g': 1, 'grams': 1
+        }
+        
+        # Calculate BMI
+        bmi = calculate_bmi(request.weight_kg, request.height_cm)
+        
+        # Prepare user context
+        user_data = {
+            'age': request.age,
+            'gender': request.gender,
+            'bmi': bmi,
+            'fasting_sugar': request.fasting_sugar,
+            'post_meal_sugar': request.post_meal_sugar,
+            'time_of_day': request.time_of_day
+        }
+        
+        # Process each meal
+        individual_predictions = []
+        overall_risk_scores = []
+        is_any_unsafe = False
+        
+        for meal_item in request.meals:
+            # Convert portion to grams
+            portion_size_g = meal_item.portion_size * portion_unit_to_grams.get(meal_item.portion_unit.lower(), 100)
+            
+            # Get prediction for this meal
+            result = meal_safety_predictor.predict_meal_safety(
+                meal_item.meal_taken, 
+                portion_size_g, 
+                user_data
+            )
+            
+            # Map risk levels
+            risk_mapping = {
+                'safe': ('low', True),
+                'caution': ('moderate', False), 
+                'unsafe': ('high', False)
+            }
+            
+            risk_level, is_safe = risk_mapping.get(result['risk_level'], ('moderate', False))
+            
+            if not is_safe:
+                is_any_unsafe = True
+            
+            # Store risk score for overall calculation
+            risk_scores = {'low': 0, 'moderate': 1, 'high': 2}
+            overall_risk_scores.append(risk_scores.get(risk_level, 1))
+            
+            # Get nutritional info
+            nutritional_info = get_nutritional_info_enhanced(
+                meal_item.meal_taken, 
+                portion_size_g, 
+                result['portion_features']
+            )
+            
+            individual_predictions.append(IndividualMealPrediction(
+                meal=meal_item.meal_taken,
+                is_safe=is_safe,
+                confidence=result['confidence'],
+                risk_level=risk_level,
+                nutritional_info=nutritional_info
+            ))
+        
+        # Determine overall risk level
+        avg_risk_score = sum(overall_risk_scores) / len(overall_risk_scores)
+        if avg_risk_score >= 1.5:
+            overall_risk_level = 'high'
+        elif avg_risk_score >= 0.5:
+            overall_risk_level = 'moderate'
+        else:
+            overall_risk_level = 'low'
+        
+        # Calculate overall confidence
+        overall_confidence = sum(pred.confidence for pred in individual_predictions) / len(individual_predictions)
+        
+        # Generate combined recommendations
+        combined_recommendations = []
+        high_risk_meals = [pred.meal for pred in individual_predictions if pred.risk_level == 'high']
+        
+        if high_risk_meals:
+            combined_recommendations.append(Recommendation(
+                name="High Risk Meals Detected",
+                reason=f"Consider avoiding or reducing portions of: {', '.join(high_risk_meals)}"
+            ))
+        
+        if overall_risk_level == 'moderate':
+            combined_recommendations.append(Recommendation(
+                name="Moderate Risk Combination",
+                reason="Monitor blood sugar levels closely after this meal combination"
+            ))
+        
+        # Create response message
+        meal_count = len(request.meals)
+        if is_any_unsafe:
+            message = f"Analysis complete for {meal_count} meals. Some meals in this combination may need attention."
+        elif overall_risk_level == 'moderate':
+            message = f"Analysis complete for {meal_count} meals. This combination has moderate risk - monitor carefully."
+        else:
+            message = f"Analysis complete for {meal_count} meals. This combination appears safe for you."
+        
+        return MultipleMealResponse(
+            is_safe=not is_any_unsafe,
+            overall_risk_level=overall_risk_level,
+            message=message,
+            bmi=bmi,
+            confidence=overall_confidence,
+            predictions=individual_predictions,
+            recommendations=combined_recommendations if combined_recommendations else None
+        )
+        
+    except ValueError as ve:
+        raise HTTPException(status_code=400, detail=str(ve))
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Multiple meal prediction error: {str(e)}")
 
 @app.get("/food/{food_name}")
 async def get_food_details(food_name: str):

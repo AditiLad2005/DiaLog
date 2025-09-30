@@ -56,7 +56,7 @@ const BloodSugarLineChart = ({ data, title = "Blood Sugar Trends" }) => {
               stroke="#10b981" 
               strokeWidth={3}
               dot={{ fill: '#10b981', strokeWidth: 2, r: 5 }}
-              name="Fasting Blood Sugar"
+              name="Pre-meal Blood Sugar"
               activeDot={{ r: 7, stroke: '#10b981', strokeWidth: 2 }}
             />
             <Line 
@@ -78,7 +78,7 @@ const BloodSugarLineChart = ({ data, title = "Blood Sugar Trends" }) => {
           <span>Target Ranges:</span>
         </div>
         <div className="flex justify-between mt-1">
-          <span>• Fasting: 80-130 mg/dL</span>
+          <span>• Pre-meal: 80-130 mg/dL</span>
           <span>• Post-meal: &lt;180 mg/dL</span>
         </div>
       </div>

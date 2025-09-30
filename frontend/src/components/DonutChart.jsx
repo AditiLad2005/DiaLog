@@ -1,7 +1,8 @@
 import React from 'react';
 import { PieChart, Pie, Cell, Tooltip, Legend, ResponsiveContainer } from 'recharts';
+import { CalendarDaysIcon } from '@heroicons/react/24/outline';
 
-const MealRiskDonutChart = ({ data, title = "Recent Meals Analysis", showMealNames = false }) => {
+const MealRiskDonutChart = ({ data, title = "Recent Meals Analysis", showMealNames = false, onViewTrends }) => {
   // Sample data if none provided
   const defaultData = [
     { name: 'Low Risk', value: 65, count: 13, color: '#10b981' },
@@ -75,9 +76,21 @@ const MealRiskDonutChart = ({ data, title = "Recent Meals Analysis", showMealNam
 
   return (
     <div className="bg-white/70 dark:bg-gray-800/70 backdrop-blur-sm rounded-2xl p-6 shadow-soft hover:shadow-medium transition-all duration-300 border border-neutral-100 dark:border-neutral-700">
-      <h3 className="text-lg font-semibold text-neutral-900 dark:text-white mb-4">
-        {title}
-      </h3>
+      <div className="flex items-center justify-between mb-4">
+        <h3 className="text-lg font-semibold text-neutral-900 dark:text-white">
+          {title}
+        </h3>
+        <div className="group relative">
+          <CalendarDaysIcon 
+            className="h-5 w-5 text-primary-600 dark:text-primary-400 cursor-pointer hover:text-primary-700 dark:hover:text-primary-300 transition-colors duration-200 hover:scale-110 transform" 
+            title="View daily trends"
+            onClick={() => onViewTrends && onViewTrends()}
+          />
+          <div className="absolute bottom-full right-0 mb-2 px-2 py-1 text-xs text-white bg-gray-800 dark:bg-gray-700 rounded opacity-0 group-hover:opacity-100 transition-opacity duration-200 whitespace-nowrap pointer-events-none z-10">
+            View Daily Trends
+          </div>
+        </div>
+      </div>
       <div className="h-80">
         <ResponsiveContainer width="100%" height="100%">
           <PieChart>
