@@ -15,6 +15,7 @@ const Profile = () => {
     email: '',
     age: '',
     gender: '',
+    diabetes_type: 'Type2',
     height: '',
     weight: '',
     heightUnit: 'cm',
@@ -33,6 +34,7 @@ const Profile = () => {
         if (profile) {
           setFormData({
             ...profile,
+            diabetes_type: profile.diabetes_type || 'Type2',
             email: user.email || profile.email || ''
           });
           // Use saved language if present
@@ -226,6 +228,26 @@ const Profile = () => {
                     <option value="male">Male</option>
                     <option value="female">Female</option>
                     <option value="other">Other</option>
+                  </select>
+                </div>
+
+                <div>
+                  <label htmlFor="diabetes_type" className="block text-sm font-medium text-neutral-700 dark:text-neutral-300 mb-2">
+                    Diabetes Type *
+                  </label>
+                  <select
+                    id="diabetes_type"
+                    name="diabetes_type"
+                    value={formData.diabetes_type}
+                    onChange={handleInputChange}
+                    className="w-full px-4 py-3 rounded-xl border border-neutral-300 dark:border-neutral-600 bg-white dark:bg-gray-700 text-neutral-900 dark:text-white focus:ring-2 focus:ring-primary-500 focus:border-transparent transition-all duration-200"
+                    required
+                    disabled={!isEditing}
+                  >
+                    <option value="Type1">Type 1</option>
+                    <option value="Type2">Type 2</option>
+                    <option value="Gestational">Gestational</option>
+                    <option value="Prediabetes">Prediabetes</option>
                   </select>
                 </div>
               </div>

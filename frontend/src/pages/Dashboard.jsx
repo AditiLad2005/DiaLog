@@ -101,10 +101,10 @@ const Dashboard = () => {
         try {
           profile = await fetchUserProfile(userId);
           console.log('Fetched user profile:', profile); // Debug log
-          setUserProfile(profile || {});
+          setUserProfile({ ...(profile || {}), user_id: userId });
         } catch (err) {
           console.error('Profile fetch error:', err);
-          setUserProfile({});
+          setUserProfile({ user_id: userId });
         }
 
         // Aggregate stats from logs
