@@ -368,6 +368,9 @@ class PredictionResponse(BaseModel):
     glycemic_load: Optional[float] = None
     personalized_predicted_blood_sugar: Optional[float] = None
     model_used: Optional[str] = None
+    # Color-coded badges for UI
+    risk_badge: Optional[Dict[str, Any]] = None
+    gl_badge: Optional[Dict[str, Any]] = None
 
 class IndividualMealPrediction(BaseModel):
     meal: str
@@ -728,7 +731,8 @@ async def predict_meal_safety(request: MealRequest):
                 if float(gl_portion) >= gl_cutoff:
                     risk_level = 'high'
                     is_safe = False
-                    message = f"Glycemic load for this portion (GL: {float(gl_portion):.1f}) meets/exceeds safe threshold (≤ {gl_cutoff:.0f}). Avoid or reduce portion."
+                    # Keep explanation neutral without exposing numeric thresholds
+                    message = "This portion’s glycemic impact appears high for your profile. Prefer a smaller portion or choose an alternative."
             except Exception:
                 pass
 
@@ -810,6 +814,17 @@ async def predict_meal_safety(request: MealRequest):
             user_data
         )
         
+        # Build badges
+        def _risk_badge(level: str) -> Dict[str, Any]:
+            lvl = (level or '').lower()
+            if lvl == 'high':
+                return {"label": "UNSAFE", "color": "red"}
+            if lvl == 'medium' or lvl == 'moderate':
+                return {"label": "CAUTION", "color": "yellow"}
+            return {"label": "SAFE", "color": "green"}
+
+        gl_badge = _gl_badge(gl_portion, _gl_universal_cutoff()) if gl_portion is not None else None
+
         return PredictionResponse(
             is_safe=is_safe,
             confidence=confidence,
@@ -820,7 +835,9 @@ async def predict_meal_safety(request: MealRequest):
             recommendations=recommendations,
             glycemic_load=(float(gl_portion) if gl_portion is not None else None),
             personalized_predicted_blood_sugar=(float(personalized_pred) if personalized_pred is not None else None),
-            model_used=model_used
+            model_used=model_used,
+            risk_badge=_risk_badge(risk_level),
+            gl_badge=gl_badge
         )
         
     except ValueError as ve:

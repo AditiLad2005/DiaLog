@@ -226,7 +226,7 @@ const SafeMealSuggestions = ({ userProfile = {}, currentMeal = null, className =
       response = await getPersonalizedRecommendations(requestData);
     }
     
-    // Transform ML response to match expected format
+    // Transform ML response to match expected format and use correct backend field names
     let transformedRecommendations = response.recommendations.map(rec => ({
       name: rec.name,
       calories: rec.calories,
@@ -235,8 +235,11 @@ const SafeMealSuggestions = ({ userProfile = {}, currentMeal = null, className =
       fat: rec.fat,
       fiber: rec.fiber,
       glycemicIndex: rec.glycemicIndex,
+      glycemicLoad: rec.glycemicLoad200 || rec.glycemic_load || undefined,
+      glBadge: rec.glBadge || rec.gl_badge || undefined,
       portionSize: rec.portionSize,
       timeOfDay: rec.timeOfDay,
+      riskLevel: rec.risk_level || rec.riskLevel || 'low',
       riskScore: rec.risk_level === 'safe' ? 0.1 : rec.risk_level === 'caution' ? 0.5 : 0.8,
       confidence: rec.confidence || 0.8,
       category: category === 'all' ? 'lunch' : category,

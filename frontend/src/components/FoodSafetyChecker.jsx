@@ -83,11 +83,14 @@ export default function FoodSafetyChecker({ userProfile = {}, className = '' }) 
   };
 
   const riskLevel = result?.risk_level; // 'low' | 'medium' | 'high'
-  const status = riskLevel === 'low' ? 'safe' : riskLevel === 'medium' ? 'caution' : riskLevel === 'high' ? 'unsafe' : 'unknown';
   const statusBadge = (() => {
-    if (status === 'safe' || status === 'Safe') return <Badge color="bg-green-100 text-green-700">Safe for diabetics</Badge>;
-    if (status === 'caution' || status === 'Caution') return <Badge color="bg-yellow-100 text-yellow-700">Caution</Badge>;
-    if (status === 'unsafe' || status === 'Unsafe') return <Badge color="bg-red-100 text-red-700">Unsafe</Badge>;
+    const badge = result?.risk_badge;
+    if (badge?.color === 'green') return <Badge color="bg-green-100 text-green-700">{badge.label || 'SAFE'}</Badge>;
+    if (badge?.color === 'yellow') return <Badge color="bg-yellow-100 text-yellow-700">{badge.label || 'CAUTION'}</Badge>;
+    if (badge?.color === 'red') return <Badge color="bg-red-100 text-red-700">{badge.label || 'UNSAFE'}</Badge>;
+    if (riskLevel === 'low') return <Badge color="bg-green-100 text-green-700">SAFE</Badge>;
+    if (riskLevel === 'medium' || riskLevel === 'moderate') return <Badge color="bg-yellow-100 text-yellow-700">CAUTION</Badge>;
+    if (riskLevel === 'high') return <Badge color="bg-red-100 text-red-700">UNSAFE</Badge>;
     return <Badge color="bg-gray-100 text-gray-700">Unknown</Badge>;
   })();
 
@@ -163,11 +166,29 @@ export default function FoodSafetyChecker({ userProfile = {}, className = '' }) 
           {result ? (
             <div>
               <div className="mb-2">{statusBadge}</div>
+              {result?.gl_badge && (
+                <div className="mb-2">
+                  <Badge
+                    color={
+                      result.gl_badge.color === 'green'
+                        ? 'bg-green-100 text-green-700'
+                        : result.gl_badge.color === 'yellow'
+                        ? 'bg-yellow-100 text-yellow-700'
+                        : 'bg-red-100 text-red-700'
+                    }
+                  >
+                    {result.gl_badge.label}
+                  </Badge>
+                </div>
+              )}
               {typeof result?.is_safe === 'boolean' && (
                 <div className="text-sm text-gray-700 dark:text-gray-300">Overall: {result.is_safe ? 'Safe' : 'Not Safe'}</div>
               )}
               {result?.confidence != null && (
                 <div className="text-sm text-gray-700 dark:text-gray-300">Confidence: {(result.confidence * 100).toFixed(0)}%</div>
+              )}
+              {result?.personalized_predicted_blood_sugar != null && (
+                <div className="text-sm text-gray-700 dark:text-gray-300">Personalized prediction: {Math.round(result.personalized_predicted_blood_sugar)} mg/dL</div>
               )}
               {result?.message && (
                 <p className="text-xs mt-2 text-gray-600 dark:text-gray-400">{result.message}</p>
