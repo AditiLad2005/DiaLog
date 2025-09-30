@@ -187,13 +187,31 @@ const SafeMealSuggestions = ({ userProfile = {}, currentMeal = null, className =
       'all': 'Lunch'  // Default
     };
 
+    // Derive height (cm) and weight (kg) from profile if unit-specific fields are not present
+    const parseNum = (v) => {
+      const n = parseFloat(v);
+      return isNaN(n) ? undefined : n;
+    };
+    const rawHeight = userProfile.height_cm ?? userProfile.height;
+    const heightUnit = userProfile.height_cm ? 'cm' : (userProfile.heightUnit || 'cm');
+    let height_cm = parseNum(rawHeight);
+    if (height_cm !== undefined && heightUnit === 'ft') {
+      // If user entered 5.4 as feet, assume 5.4 ft, convert to cm
+      height_cm = height_cm * 30.48;
+    }
+    const rawWeight = userProfile.weight_kg ?? userProfile.weight;
+    const weightUnit = userProfile.weight_kg ? 'kg' : (userProfile.weightUnit || 'kg');
+    let weight_kg = parseNum(rawWeight);
+    if (weight_kg !== undefined && weightUnit === 'lbs') {
+      weight_kg = weight_kg * 0.453592;
+    }
     const requestData = {
-      age: userProfile.age || 35,
-      gender: userProfile.gender || 'Male',
-      weight_kg: userProfile.weight_kg || 70,
-      height_cm: userProfile.height_cm || 170,
-      fasting_sugar: userProfile.fasting_sugar || 100,
-      post_meal_sugar: userProfile.post_meal_sugar || 140,
+      age: parseNum(userProfile.age) || 35,
+      gender: (userProfile.gender || 'Male'),
+      weight_kg: weight_kg || 70,
+      height_cm: height_cm || 170,
+      fasting_sugar: parseNum(userProfile.fasting_sugar) || 100,
+      post_meal_sugar: parseNum(userProfile.post_meal_sugar) || 140,
       diabetes_type: userProfile.diabetes_type || 'Type2',
       time_of_day: timeOfDayMap[category] || 'Lunch',
       count: count

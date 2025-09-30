@@ -40,6 +40,7 @@ class PersonalizedMealRecommender:
                 'user_id': 'User_ID',
                 'meal_taken': 'Food_Item', 
                 'post_meal_sugar': 'Blood_Sugar_Level',
+                'fasting_sugar': 'Fasting_Sugar',
                 'age': 'Age',
                 'weight_kg': 'Weight',
                 'height_cm': 'Height',
@@ -57,7 +58,7 @@ class PersonalizedMealRecommender:
             self.df = self.df.dropna(subset=['User_ID', 'Food_Item', 'Blood_Sugar_Level'])
             
             # Ensure numeric columns
-            numeric_cols = ['Blood_Sugar_Level', 'Age', 'Weight', 'Height']
+            numeric_cols = ['Blood_Sugar_Level', 'Fasting_Sugar', 'Age', 'Weight', 'Height']
             for col in numeric_cols:
                 if col in self.df.columns:
                     self.df[col] = pd.to_numeric(self.df[col], errors='coerce')
@@ -117,6 +118,16 @@ class PersonalizedMealRecommender:
             self.df['BMI'] = self.df['Weight'] / ((self.df['Height'] / 100) ** 2)
         else:
             self.df['BMI'] = 22.5  # Default BMI
+
+        # Parse timestamp if available for recency weighting
+        self.df['__timestamp'] = None
+        for ts_col in ['createdAt', 'timestamp', 'Timestamp', 'time']:
+            if ts_col in self.df.columns:
+                try:
+                    self.df['__timestamp'] = pd.to_datetime(self.df[ts_col], errors='coerce')
+                    break
+                except Exception:
+                    pass
     
     def analyze_user_patterns(self, user_id):
         """Analyze individual user patterns"""
@@ -205,7 +216,7 @@ class PersonalizedMealRecommender:
         print("🔄 Training personalized models...")
         
         # Define feature columns
-        feature_columns = ['Food_Item_encoded', 'Age', 'Weight', 'Height', 'BMI']
+        feature_columns = ['Food_Item_encoded', 'Age', 'Weight', 'Height', 'BMI', 'Fasting_Sugar']
         
         # Add encoded categorical features if they exist
         for col in ['Gender_encoded', 'Diabetes_Type_encoded', 'Meal_Time_encoded']:
@@ -218,9 +229,9 @@ class PersonalizedMealRecommender:
         if not available_features:
             print("❌ No features available for training")
             return
-        
+
         users_with_models = 0
-        
+
         for user_id in self.df['User_ID'].unique():
             user_data = self.df[self.df['User_ID'] == user_id]
             
@@ -230,12 +241,33 @@ class PersonalizedMealRecommender:
                     # Prepare features and target
                     X = user_data[available_features].fillna(0)
                     y = user_data['Blood_Sugar_Level']
+                    # Compute sample weights emphasizing recency and stable readings
+                    sample_weight = None
+                    try:
+                        # Recency: 30-day half-life
+                        if user_data['__timestamp'].notna().any():
+                            now = pd.Timestamp.utcnow()
+                            age_days = (now - user_data['__timestamp'].fillna(now)).dt.total_seconds() / 86400.0
+                            recency_w = np.exp(-np.log(2) * (age_days / 30.0))
+                        else:
+                            recency_w = np.ones(len(user_data))
+                        # Favor readings near target range (<= 140)
+                        stability_w = np.where(user_data['Blood_Sugar_Level'] <= 140, 1.2, 1.0)
+                        # Combine and clip
+                        sample_weight = (recency_w * stability_w).astype(float)
+                    except Exception:
+                        sample_weight = None
                     
                     # Train user-specific model
                     if len(X) >= 10:  # Enough data for train/test split
                         X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.3, random_state=42)
                         model = RandomForestRegressor(n_estimators=50, random_state=42)
-                        model.fit(X_train, y_train)
+                        if sample_weight is not None:
+                            # Align weights to train indices
+                            sw_train = sample_weight.iloc[y_train.index] if hasattr(sample_weight, 'iloc') else sample_weight
+                            model.fit(X_train, y_train, sample_weight=sw_train)
+                        else:
+                            model.fit(X_train, y_train)
                         
                         # Evaluate
                         y_pred = model.predict(X_test)
@@ -243,7 +275,10 @@ class PersonalizedMealRecommender:
                         
                     else:  # Train on all data
                         model = RandomForestRegressor(n_estimators=30, random_state=42)
-                        model.fit(X, y)
+                        if sample_weight is not None:
+                            model.fit(X, y, sample_weight=sample_weight)
+                        else:
+                            model.fit(X, y)
                         score = 0.5  # Assume reasonable performance
                     
                     # Store model and patterns
@@ -271,7 +306,27 @@ class PersonalizedMealRecommender:
             
         except Exception as e:
             print(f"Warning: Could not train general model: {e}")
-        
+
+        # Train cohort-specific general models (by Diabetes_Type) if available
+        self.general_models_by_diabetes = {}
+        if 'Diabetes_Type' in self.df.columns:
+            try:
+                for dtype, grp in self.df.groupby('Diabetes_Type'):
+                    if len(grp) < 10:
+                        continue
+                    Xg = grp[available_features].fillna(0)
+                    yg = grp['Blood_Sugar_Level']
+                    mdl = RandomForestRegressor(n_estimators=80, random_state=42)
+                    mdl.fit(Xg, yg)
+                    self.general_models_by_diabetes[str(dtype)] = {
+                        'model': mdl,
+                        'features': available_features
+                    }
+                if len(self.general_models_by_diabetes) > 0:
+                    print(f"✅ Trained cohort models by diabetes type: {list(self.general_models_by_diabetes.keys())}")
+            except Exception as e:
+                print(f"Warning: Could not train diabetes-type models: {e}")
+
         print(f"✅ Loaded {users_with_models} personalized models")
         return users_with_models > 0
     
@@ -295,11 +350,21 @@ class PersonalizedMealRecommender:
                 
             else:
                 # Use general model
-                if self.general_model is None:
+                model = None
+                features = None
+                # Try diabetes-type cohort model first
+                dtype_str = None
+                if user_features is not None:
+                    dtype_str = user_features.get('Diabetes_Type') or None
+                if dtype_str and hasattr(self, 'general_models_by_diabetes') and dtype_str in self.general_models_by_diabetes:
+                    info = self.general_models_by_diabetes[dtype_str]
+                    model = info['model']
+                    features = info['features']
+                elif self.general_model is not None:
+                    model = self.general_model
+                    features = self.general_features
+                else:
                     return 140  # Default prediction
-                
-                model = self.general_model
-                features = self.general_features
                 food_encoded = 0  # General encoding
             
             # Prepare features
@@ -309,6 +374,7 @@ class PersonalizedMealRecommender:
                     'Weight': 70,
                     'Height': 170,
                     'BMI': 24.2,
+                    'Fasting_Sugar': 100,
                     'Gender_encoded': 0,
                     'Diabetes_Type_encoded': 0,
                     'Meal_Time_encoded': 0
