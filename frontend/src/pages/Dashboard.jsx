@@ -68,6 +68,152 @@ const Dashboard = () => {
       }
     };
 
+    // Compute dynamic, data-driven insights from logs
+    const computeDynamicInsights = (logs) => {
+      const norm = (v, min, max) => {
+        if (isNaN(v)) return 0;
+        if (max === min) return 0;
+        return Math.max(0, Math.min(1, (v - min) / (max - min)));
+      };
+
+      // Normalize and extract useful fields
+      const entries = logs.map((log, idx) => {
+        const pm = parseFloat(log.sugar_level_post || log.postMealSugar || 0);
+        const fasting = parseFloat(log.sugar_level_fasting || log.fastingSugar || 0);
+        const mealName = Array.isArray(log.meals_taken) && log.meals_taken.length > 0
+          ? (log.meals_taken[0].meal || '')
+          : (log.meal_name || log.meal || '');
+        const timeOfDay = (Array.isArray(log.meals_taken) && log.meals_taken.length > 0
+          ? (log.meals_taken[0].time_of_day || '')
+          : (log.time_of_day || '')).toString().toLowerCase();
+        const createdAt = log.createdAt?.toDate?.()
+          ? log.createdAt.toDate()
+          : (log.createdAt ? new Date(log.createdAt) : new Date());
+        const dow = createdAt.getDay(); // 0=Sun..6=Sat
+        return { pm, fasting, mealName, timeOfDay, createdAt, dow };
+      }).filter(e => !isNaN(e.pm) && e.pm > 0);
+
+      const insights = [];
+
+      if (entries.length === 0) {
+        return {
+          insights: [],
+          overallScore: 10,
+        };
+      }
+
+      // Evening/Dinner impact
+      const isEvening = (tod, name) => {
+        const s = (tod || '').toLowerCase();
+        const n = (name || '').toLowerCase();
+        return s.includes('dinner') || s.includes('evening') || s.includes('night') || n.includes('dinner');
+      };
+      const evening = entries.filter(e => isEvening(e.timeOfDay, e.mealName));
+      const nonEvening = entries.filter(e => !isEvening(e.timeOfDay, e.mealName));
+      const avg = arr => arr.length ? arr.reduce((a, b) => a + b.pm, 0) / arr.length : 0;
+      const eveAvg = avg(evening);
+      const nonEveAvg = avg(nonEvening);
+      if (evening.length >= 2 && nonEvening.length >= 2) {
+        const diff = eveAvg - nonEveAvg;
+        const effect = Math.abs(diff);
+        const countFactor = Math.min(1, (evening.length + nonEvening.length) / 12);
+        const effectFactor = Math.min(1, effect / 40);
+        const confidence = Math.max(0.4, Number(((countFactor * 0.5) + (effectFactor * 0.5)).toFixed(2)));
+        if (diff > 10) {
+          insights.push({
+            type: 'pattern',
+            title: 'Evening Meals Impact',
+            description: `Average post-meal sugar after dinner is about ${Math.round(diff)} mg/dL higher than other meals.`,
+            confidence,
+            suggestion: 'Try smaller portions, add protein/fiber, or eat a bit earlier in the evening.'
+          });
+        } else if (diff < -10) {
+          insights.push({
+            type: 'improvement',
+            title: 'Strong Dinner Control',
+            description: `Dinner time shows about ${Math.round(-diff)} mg/dL lower post-meal levels vs. other meals.`,
+            confidence,
+            suggestion: 'Great pattern—keep your current dinner choices and timing.'
+          });
+        }
+      }
+
+      // Weekend vs Weekday behavior
+      const weekend = entries.filter(e => e.dow === 0 || e.dow === 6);
+      const weekday = entries.filter(e => e.dow >= 1 && e.dow <= 5);
+      const weekendAvg = avg(weekend);
+      const weekdayAvg = avg(weekday);
+      if (weekend.length >= 3 && weekday.length >= 3) {
+        const diff = weekendAvg - weekdayAvg;
+        const effect = Math.abs(diff);
+        const countFactor = Math.min(1, (weekend.length + weekday.length) / 14);
+        const effectFactor = Math.min(1, effect / 40);
+        const confidence = Math.max(0.4, Number(((countFactor * 0.5) + (effectFactor * 0.5)).toFixed(2)));
+        if (diff < -8) {
+          insights.push({
+            type: 'improvement',
+            title: 'Weekend Progress',
+            description: `Weekend post-meal levels average ~${Math.round(-diff)} mg/dL lower than weekdays.`,
+            confidence,
+            suggestion: 'Your weekend routines are working—keep portions and timing consistent.'
+          });
+        } else if (diff > 12) {
+          insights.push({
+            type: 'alert',
+            title: 'Weekend Spikes',
+            description: `Weekends average ~${Math.round(diff)} mg/dL higher post-meal than weekdays.`,
+            confidence,
+            suggestion: 'Watch portions and carb-heavy foods on weekends; try planning balanced meals.'
+          });
+        }
+      }
+
+      // Carb sensitivity (Rice indicator)
+      const isRice = (name) => {
+        const s = (name || '').toLowerCase();
+        return s.includes('rice') || s.includes('biriyani') || s.includes('biryani') || s.includes('pulao');
+      };
+      const riceMeals = entries.filter(e => isRice(e.mealName));
+      const nonRiceMeals = entries.filter(e => !isRice(e.mealName));
+      const riceAvg = avg(riceMeals);
+      const nonRiceAvg = avg(nonRiceMeals);
+      if (riceMeals.length >= 2 && nonRiceMeals.length >= 2) {
+        const diff = riceAvg - nonRiceAvg;
+        const effect = Math.abs(diff);
+        const countFactor = Math.min(1, (riceMeals.length + nonRiceMeals.length) / 12);
+        const effectFactor = Math.min(1, effect / 40);
+        const confidence = Math.max(0.4, Number(((countFactor * 0.5) + (effectFactor * 0.5)).toFixed(2)));
+        if (diff > 12) {
+          insights.push({
+            type: 'alert',
+            title: 'Carbohydrate Sensitivity',
+            description: `Rice meals track ~${Math.round(diff)} mg/dL higher post-meal vs alternatives.`,
+            confidence,
+            suggestion: 'Try smaller rice portions or swap with quinoa, millets; add protein and fiber.'
+          });
+        } else if (diff < -8) {
+          insights.push({
+            type: 'improvement',
+            title: 'Smart Carb Pairing',
+            description: `Rice meals show ~${Math.round(-diff)} mg/dL lower spikes than similar meals.`,
+            confidence,
+            suggestion: 'Nice balance—keep pairing carbs with protein and fiber.'
+          });
+        }
+      }
+
+      // Overall score: fewer high-risk patterns -> higher score
+      const highCount = logs.filter(l => {
+        const r = (l.riskLevel || l.prediction?.risk_level || l.prediction?.risk || '').toString().toLowerCase();
+        const pm = parseFloat(l.sugar_level_post || l.postMealSugar || 0);
+        return r === 'high' || pm > 180;
+      }).length;
+      const total = logs.length || 1;
+      const overallScore = Math.max(1, Math.min(10, 10 - Math.round((highCount * 10) / total)));
+
+      return { insights, overallScore };
+    };
+
     const loadUserData = async (userId) => {
       try {
         // Double-check authentication before fetching
@@ -182,35 +328,9 @@ const Dashboard = () => {
           insights: [],
         });
 
-        // ML Insights (placeholder, could be enhanced)
-        setInsights({
-          insights: [
-            {
-              type: 'pattern',
-              title: 'Evening Meals Impact',
-              description: 'Your blood sugar tends to be higher after dinner meals.',
-              confidence: 0.89,
-              suggestion: 'Consider smaller portions or earlier dinner times.'
-            },
-            {
-              type: 'improvement',
-              title: 'Weekend Progress',
-              description: 'Your weekend meal management has improved.',
-              confidence: 0.76,
-              suggestion: 'Keep up the great work with portion control!'
-            },
-            {
-              type: 'alert',
-              title: 'Carbohydrate Sensitivity',
-              description: 'Rice-based meals show higher post-meal spikes.',
-              confidence: 0.82,
-              suggestion: 'Try pairing rice with more protein and fiber.'
-            }
-          ],
-          overallScore: logs.length ? (10 - (riskyMeals * 10 / logs.length)) : 10,
-          weeklyTrend: '',
-          nextModelUpdate: '',
-        });
+        // ML Insights (dynamic, data-driven)
+        const dyn = computeDynamicInsights(logs);
+        setInsights(dyn);
         
         setLoading(false);
       } catch (err) {
