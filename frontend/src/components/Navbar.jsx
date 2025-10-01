@@ -42,8 +42,7 @@ const Navbar = () => {
         { name: 'Profile', href: '/profile' }
       ]
     : [
-        { name: 'Home', href: '/' },
-        { name: 'Safety & Nutrition', href: '/safety' }
+        { name: 'Home', href: '/' }
       ];
 
   // Apply dark mode to document
@@ -102,8 +101,8 @@ const Navbar = () => {
             {/* Language switcher */}
             <LanguageSwitcher />
 
-            {/* Log Out button after authentication, before theme toggle */}
-            {user && (
+            {/* Auth button (Login/Logout) */}
+            {user ? (
               <button
                 onClick={async () => {
                   await auth.signOut();
@@ -112,6 +111,13 @@ const Navbar = () => {
                 className="relative px-4 py-2 rounded-xl text-sm font-medium bg-danger-50 text-danger-700 dark:bg-danger-900/30 dark:text-danger-300 hover:bg-danger-100 dark:hover:bg-danger-900/40 transition-all duration-300 mr-2"
               >
                 Log Out
+              </button>
+            ) : (
+              <button
+                onClick={() => navigate('/auth')}
+                className="relative px-4 py-2 rounded-xl text-sm font-medium bg-success-50 text-success-700 dark:bg-success-900/30 dark:text-success-300 hover:bg-success-100 dark:hover:bg-success-900/40 transition-all duration-300 mr-2"
+              >
+                Log In
               </button>
             )}
             {/* Enhanced Theme toggle */}
@@ -182,7 +188,7 @@ const Navbar = () => {
                 {item.name}
               </Link>
             ))}
-            {user && (
+            {user ? (
               <button
                 onClick={async () => {
                   await auth.signOut();
@@ -192,6 +198,16 @@ const Navbar = () => {
                 className="block w-full px-4 py-3 rounded-xl text-base font-medium bg-danger-50 text-danger-700 dark:bg-danger-900/30 dark:text-danger-300 hover:bg-danger-100 dark:hover:bg-danger-900/40 transition-all duration-300"
               >
                 Log Out
+              </button>
+            ) : (
+              <button
+                onClick={() => {
+                  navigate('/auth');
+                  setIsOpen(false);
+                }}
+                className="block w-full px-4 py-3 rounded-xl text-base font-medium bg-success-50 text-success-700 dark:bg-success-900/30 dark:text-success-300 hover:bg-success-100 dark:hover:bg-success-900/40 transition-all duration-300"
+              >
+                Log In
               </button>
             )}
           </div>

@@ -38,12 +38,10 @@ const Home = () => {
   useEffect(() => {
     const unsubscribe = auth.onAuthStateChanged((currentUser) => {
       setUser(currentUser);
-      if (currentUser) {
-        navigate('/dashboard');
-      }
+      // Do not auto-redirect; always show landing page first
     });
     return () => unsubscribe();
-  }, [navigate]);
+  }, []);
 
   const handleProfileClick = (e) => {
     e.preventDefault();
@@ -91,40 +89,16 @@ const Home = () => {
               about your health with intelligent analytics and personalized insights.
             </p>
 
-            {/* ...existing code... */}
-            {/* ...existing code... */}
-            {/* Buttons after authentication */}
-            {user && (
-              <div className="flex flex-col sm:flex-row justify-center items-center space-y-4 sm:space-y-0 sm:space-x-6 animate-slide-up">
-                <Link
-                  to="/meal-log"
-                  className="inline-flex items-center px-8 py-4 bg-primary-600 hover:bg-primary-700 text-white text-lg font-semibold rounded-xl transition-all duration-300 shadow-medium hover:shadow-strong transform hover:-translate-y-1"
-                >
-                  <ClipboardDocumentListIcon className="h-6 w-6 mr-3" />
-                  Log My Data
-                  <ArrowRightIcon className="h-5 w-5 ml-2" />
-                </Link>
-                <Link
-                  to="/dashboard"
-                  className="inline-flex items-center px-8 py-4 bg-white/80 dark:bg-gray-800/80 backdrop-blur-sm text-primary-600 dark:text-primary-400 text-lg font-semibold rounded-xl border-2 border-primary-200 dark:border-primary-700 hover:border-primary-300 dark:hover:border-primary-600 hover:bg-primary-50 dark:hover:bg-primary-900/20 transition-all duration-300 shadow-soft hover:shadow-medium"
-                >
-                  <ChartBarIcon className="h-6 w-6 mr-3" />
-                  View Dashboard
-                </Link>
-              </div>
-            )}
-                {/* Start Logging button below insights section, only before authentication */}
-                {!user && (
-                  <div className="flex justify-center mt-8 animate-slide-up">
-                    <button
-                      onClick={handleLogClick}
-                      className="inline-flex items-center px-8 py-4 bg-primary-800 text-white text-lg font-semibold rounded-xl hover:bg-primary-900 transition-all duration-200 border-2 border-primary-500"
-                    >
-                      Start Logging
-                      <ArrowRightIcon className="h-5 w-5 ml-2" />
-                    </button>
-                  </div>
-                )}
+            {/* Single Start Logging button: always send to auth */}
+            <div className="flex justify-center mt-8 animate-slide-up">
+              <Link
+                to="/auth"
+                className="inline-flex items-center px-8 py-4 bg-primary-800 text-white text-lg font-semibold rounded-xl hover:bg-primary-900 transition-all duration-200 border-2 border-primary-500"
+              >
+                Start Logging
+                <ArrowRightIcon className="h-5 w-5 ml-2" />
+              </Link>
+            </div>
           </div>
         </div>
 

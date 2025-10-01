@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { useTranslationContext, INDIAN_LANGUAGES } from '../contexts/TranslationContext';
+import { useTranslationContext } from '../contexts/TranslationContext';
 import { auth } from '../services/firebase';
 import { saveUserProfile, fetchUserProfile } from '../services/firebase';
 import { 
@@ -37,10 +37,11 @@ const Profile = () => {
       case 'age':
         if (value === '') {
           error = 'Age is required';
-        } else if (isNaN(value) || value < 5) {
-          error = 'Age must be at least 5 years';
+        } else if (isNaN(value) || value < 10) {
+          // Clamp later; keep message friendly for diabetic context
+          error = 'Age must be 10+ years';
         } else if (value > 120) {
-          error = 'Age must be less than 120 years';
+          error = 'Age must be ≤ 120';
         }
         break;
         
@@ -48,7 +49,17 @@ const Profile = () => {
         if (value === '') {
           error = 'Height is required';
         } else if (isNaN(value) || parseFloat(value) <= 0) {
-          error = 'Height must be greater than 0';
+          error = 'Height must be positive';
+        } else {
+          const v = parseFloat(value);
+          const unit = formData.heightUnit;
+          if (unit === 'cm') {
+            if (v < 100) error = 'Height seems too low (min 100 cm)';
+            else if (v > 250) error = 'Height seems too high (max 250 cm)';
+          } else if (unit === 'ft') {
+            if (v < 3) error = 'Height seems too low (min 3 ft)';
+            else if (v > 8.2) error = 'Height seems too high (max 8.2 ft)';
+          }
         }
         break;
         
@@ -56,7 +67,17 @@ const Profile = () => {
         if (value === '') {
           error = 'Weight is required';
         } else if (isNaN(value) || parseFloat(value) <= 0) {
-          error = 'Weight must be greater than 0';
+          error = 'Weight must be positive';
+        } else {
+          const v = parseFloat(value);
+          const unit = formData.weightUnit;
+          if (unit === 'kg') {
+            if (v < 20) error = 'Weight seems too low (min 20 kg)';
+            else if (v > 300) error = 'Weight seems too high (max 300 kg)';
+          } else if (unit === 'lbs') {
+            if (v < 44) error = 'Weight seems too low (min 44 lbs)';
+            else if (v > 660) error = 'Weight seems too high (max 660 lbs)';
+          }
         }
         break;
     }
@@ -64,7 +85,7 @@ const Profile = () => {
     return error;
   };
 
-  const { language, setLanguage } = useTranslationContext();
+  const { language } = useTranslationContext();
   // Fetch profile data on mount
   React.useEffect(() => {
     const fetchProfile = async () => {
@@ -86,10 +107,7 @@ const Profile = () => {
             if (error) newErrors[field] = error;
           });
           setValidationErrors(newErrors);
-          // Use saved language if present
-          if (profile?.preferredLanguage) {
-            try { setLanguage(profile.preferredLanguage); } catch {}
-          }
+          // Preferred language is handled globally via navbar
         } else {
           setFormData(prev => ({
             ...prev,
@@ -130,13 +148,56 @@ const Profile = () => {
 
   const handleInputChange = (e) => {
     const { name, value } = e.target;
-    
-    // Update form data
+
+    // Handle unit conversions when unit selectors change
+    if (name === 'heightUnit') {
+      setFormData(prev => {
+        let height = prev.height;
+        // Convert existing numeric value to new unit
+        const n = parseFloat(height);
+        let converted = height;
+        if (!isNaN(n)) {
+          if (value === 'cm' && prev.heightUnit === 'ft') {
+            converted = (n * 30.48).toFixed(1); // ft -> cm
+          } else if (value === 'ft' && prev.heightUnit === 'cm') {
+            converted = (n / 30.48).toFixed(2); // cm -> ft
+          }
+        }
+        const next = { ...prev, heightUnit: value, height: converted };
+        // Re-validate after conversion
+        const err = validateField('height', next.height);
+        setValidationErrors(pe => ({ ...pe, height: err }));
+        return next;
+      });
+      return;
+    }
+
+    if (name === 'weightUnit') {
+      setFormData(prev => {
+        let weight = prev.weight;
+        const n = parseFloat(weight);
+        let converted = weight;
+        if (!isNaN(n)) {
+          if (value === 'kg' && prev.weightUnit === 'lbs') {
+            converted = (n * 0.453592).toFixed(1); // lbs -> kg
+          } else if (value === 'lbs' && prev.weightUnit === 'kg') {
+            converted = (n / 0.453592).toFixed(1); // kg -> lbs
+          }
+        }
+        const next = { ...prev, weightUnit: value, weight: converted };
+        const err = validateField('weight', next.weight);
+        setValidationErrors(pe => ({ ...pe, weight: err }));
+        return next;
+      });
+      return;
+    }
+
+    // Normal field updates
     setFormData(prev => ({
       ...prev,
       [name]: value
     }));
-    
+
     // Validate the field and update errors
     if (['age', 'height', 'weight'].includes(name)) {
       const error = validateField(name, value);
@@ -144,6 +205,58 @@ const Profile = () => {
         ...prev,
         [name]: error
       }));
+    }
+  };
+
+  // Clamp/sanitize values on blur to enforce constraints
+  const handleBlur = (e) => {
+    const { name, value } = e.target;
+    let v = value;
+    if (name === 'age') {
+      let n = parseInt(v || '');
+      if (isNaN(n)) n = '';
+      else {
+        if (n < 10) n = 10;
+        if (n > 120) n = 120;
+      }
+      setFormData(prev => ({ ...prev, age: n }));
+      const err = validateField('age', n);
+      setValidationErrors(prev => ({ ...prev, age: err }));
+    }
+    if (name === 'height') {
+      let n = parseFloat(v || '');
+      if (isNaN(n)) n = '';
+      else {
+        if (formData.heightUnit === 'cm') {
+          if (n < 100) n = 100;
+          if (n > 250) n = 250;
+        } else {
+          if (n < 3) n = 3;
+          if (n > 8.2) n = 8.2;
+        }
+      }
+      // Round to sensible precision for the unit
+      const rounded = n === '' ? '' : Number(n).toFixed(formData.heightUnit === 'cm' ? 1 : 2);
+      setFormData(prev => ({ ...prev, height: rounded }));
+      const err = validateField('height', n);
+      setValidationErrors(prev => ({ ...prev, height: err }));
+    }
+    if (name === 'weight') {
+      let n = parseFloat(v || '');
+      if (isNaN(n)) n = '';
+      else {
+        if (formData.weightUnit === 'kg') {
+          if (n < 20) n = 20;
+          if (n > 300) n = 300;
+        } else {
+          if (n < 44) n = 44;
+          if (n > 660) n = 660;
+        }
+      }
+      const roundedW = n === '' ? '' : Number(n).toFixed(1);
+      setFormData(prev => ({ ...prev, weight: roundedW }));
+      const err = validateField('weight', n);
+      setValidationErrors(prev => ({ ...prev, weight: err }));
     }
   };
 
@@ -169,6 +282,29 @@ const Profile = () => {
       return;
     }
     
+    // Clamp all values to safe ranges prior to save
+    const normalized = { ...formData };
+    try {
+      let ageN = parseInt(normalized.age);
+      if (!isNaN(ageN)) {
+        if (ageN < 10) ageN = 10;
+        if (ageN > 120) ageN = 120;
+        normalized.age = ageN;
+      }
+      let hN = parseFloat(normalized.height);
+      if (!isNaN(hN)) {
+        if (normalized.heightUnit === 'cm') { hN = Math.min(Math.max(hN, 100), 250); }
+        else { hN = Math.min(Math.max(hN, 3), 8.2); }
+        normalized.height = hN;
+      }
+      let wN = parseFloat(normalized.weight);
+      if (!isNaN(wN)) {
+        if (normalized.weightUnit === 'kg') { wN = Math.min(Math.max(wN, 20), 300); }
+        else { wN = Math.min(Math.max(wN, 44), 660); }
+        normalized.weight = wN;
+      }
+    } catch {}
+
     setIsLoading(true);
     try {
       const user = auth.currentUser;
@@ -177,8 +313,7 @@ const Profile = () => {
         setIsLoading(false);
         return;
       }
-      await saveUserProfile(user.uid, { ...formData, bmi, preferredLanguage: language });
-      try { localStorage.setItem('preferredLanguage', language); } catch {}
+  await saveUserProfile(user.uid, { ...normalized, bmi });
       alert('Profile saved successfully!');
     } catch (error) {
       alert('Error saving profile: ' + error.message);
@@ -255,23 +390,7 @@ const Profile = () => {
                   />
                 </div>
 
-                <div>
-                  <label htmlFor="language" className="block text-sm font-medium text-neutral-700 dark:text-neutral-300 mb-2">
-                    Preferred Language
-                  </label>
-                  <select
-                    id="language"
-                    name="language"
-                    value={language}
-                    onChange={(e) => setLanguage(e.target.value)}
-                    className="w-full px-4 py-3 rounded-xl border border-neutral-300 dark:border-neutral-600 bg-white dark:bg-gray-700 text-neutral-900 dark:text-white focus:ring-2 focus:ring-primary-500 focus:border-transparent transition-all duration-200"
-                    disabled={!isEditing}
-                  >
-                    {INDIAN_LANGUAGES.map(l => (
-                      <option key={l.code} value={l.code}>{l.name}</option>
-                    ))}
-                  </select>
-                </div>
+                {/* Language selection removed — controlled via navbar */}
 
                 <div>
                   <label htmlFor="age" className="block text-sm font-medium text-neutral-700 dark:text-neutral-300 mb-2">
@@ -283,13 +402,14 @@ const Profile = () => {
                     name="age"
                     value={formData.age}
                     onChange={handleInputChange}
+                    onBlur={handleBlur}
                     className={`w-full px-4 py-3 rounded-xl border ${
                       validationErrors.age 
                         ? 'border-danger-500 focus:ring-danger-500' 
                         : 'border-neutral-300 dark:border-neutral-600 focus:ring-primary-500'
                     } bg-white dark:bg-gray-700 text-neutral-900 dark:text-white focus:ring-2 focus:border-transparent transition-all duration-200`}
                     placeholder="Your age"
-                    min="5"
+                    min="10"
                     max="120"
                     required
                     disabled={!isEditing}
@@ -361,13 +481,14 @@ const Profile = () => {
                       name="height"
                       value={formData.height}
                       onChange={handleInputChange}
+                      onBlur={handleBlur}
                       className={`flex-1 px-4 py-3 rounded-xl border ${
                         validationErrors.height 
                           ? 'border-danger-500 focus:ring-danger-500' 
                           : 'border-neutral-300 dark:border-neutral-600 focus:ring-primary-500'
                       } bg-white dark:bg-gray-700 text-neutral-900 dark:text-white focus:ring-2 focus:border-transparent transition-all duration-200`}
-                      placeholder="Height"
-                      min="0.1"
+                      placeholder={`Height (${formData.heightUnit})`}
+                      min={formData.heightUnit === 'cm' ? 100 : 3}
                       step="0.1"
                       required
                       disabled={!isEditing}
@@ -400,13 +521,14 @@ const Profile = () => {
                       name="weight"
                       value={formData.weight}
                       onChange={handleInputChange}
+                      onBlur={handleBlur}
                       className={`flex-1 px-4 py-3 rounded-xl border ${
                         validationErrors.weight 
                           ? 'border-danger-500 focus:ring-danger-500' 
                           : 'border-neutral-300 dark:border-neutral-600 focus:ring-primary-500'
                       } bg-white dark:bg-gray-700 text-neutral-900 dark:text-white focus:ring-2 focus:border-transparent transition-all duration-200`}
-                      placeholder="Weight"
-                      min="0.1"
+                      placeholder={`Weight (${formData.weightUnit})`}
+                      min={formData.weightUnit === 'kg' ? 20 : 44}
                       step="0.1"
                       required
                       disabled={!isEditing}
