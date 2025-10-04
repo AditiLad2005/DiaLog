@@ -15,31 +15,35 @@ import FoodSafety from './pages/FoodSafety';
 import { TranslationProvider } from './contexts/TranslationContext';
 import LiveTranslator from './components/LiveTranslator';
 import { auth } from './services/firebase';
-import { useEffect, useState } from 'react';
+import AiAssistantButton from './components/AiAssistantButton';
+import AiChatPanel from './components/AiChatPanel';
 
 function ProtectedRoute({ children }) {
-  const [checking, setChecking] = useState(true);
-  const [user, setUser] = useState(null);
+  const [authState, setAuthState] = React.useState({ loading: true, user: null });
 
-  useEffect(() => {
-    const unsub = auth.onAuthStateChanged((u) => {
-      setUser(u);
-      setChecking(false);
+  React.useEffect(() => {
+    const unsubscribe = auth.onAuthStateChanged((u) => {
+      setAuthState({ loading: false, user: u });
     });
-    return () => unsub();
+    return () => unsubscribe();
   }, []);
 
-  if (checking) {
-    // Minimal placeholder while auth state resolves to prevent flicker/redirect loops on refresh
-    return null;
+  if (authState.loading) {
+    return (
+      <div className="w-full py-16 flex items-center justify-center text-primary-600 dark:text-primary-400">
+        Loading...
+      </div>
+    );
   }
-  if (!user) {
-    return <Navigate to="/auth" replace />;
+
+  if (!authState.user) {
+    return <Navigate to="/" replace />;
   }
   return children;
 }
 
 function App() {
+  const [isAssistantOpen, setIsAssistantOpen] = React.useState(false);
   return (
     <Router>
       <TranslationProvider>
@@ -47,6 +51,9 @@ function App() {
       <div className="flex flex-col min-h-screen">
         {/* Navigation */}
         <Navbar />
+        {/* Global AI Assistant */}
+        <AiAssistantButton onClick={() => setIsAssistantOpen(true)} />
+        <AiChatPanel isOpen={isAssistantOpen} onClose={() => setIsAssistantOpen(false)} />
         
         {/* Main Content */}
         <main className="flex-grow">
@@ -54,14 +61,14 @@ function App() {
             {/* Home Page */}
             <Route path="/" element={<Home />} />
             
-            {/* Profile Page (protected) */}
-            <Route path="/profile" element={<ProtectedRoute><Profile /></ProtectedRoute>} />
+            {/* Profile Page */}
+            <Route path="/profile" element={<Profile />} />
             
             {/* Login/Signup Page */}
             <Route path="/auth" element={<LoginSignup />} />
             
-            {/* Meal Logging (protected) */}
-            <Route path="/meal-log" element={<ProtectedRoute><MealLog /></ProtectedRoute>} />
+            {/* Meal Logging */}
+            <Route path="/meal-log" element={<MealLog />} />
             
             {/* Dashboard (protected) */}
             <Route path="/dashboard" element={<ProtectedRoute><Dashboard /></ProtectedRoute>} />

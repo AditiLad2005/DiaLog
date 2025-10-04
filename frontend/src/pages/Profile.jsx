@@ -30,8 +30,10 @@ const Profile = () => {
     weight: ''
   });
 
-  const validateField = (name, value) => {
+  const validateField = (name, value, unitsOverride = {}) => {
     let error = '';
+    const currentHeightUnit = unitsOverride.heightUnit ?? formData.heightUnit;
+    const currentWeightUnit = unitsOverride.weightUnit ?? formData.weightUnit;
     
     switch (name) {
       case 'age':
@@ -52,7 +54,7 @@ const Profile = () => {
           error = 'Height must be positive';
         } else {
           const v = parseFloat(value);
-          const unit = formData.heightUnit;
+          const unit = currentHeightUnit;
           if (unit === 'cm') {
             if (v < 100) error = 'Height seems too low (min 100 cm)';
             else if (v > 250) error = 'Height seems too high (max 250 cm)';
@@ -70,7 +72,7 @@ const Profile = () => {
           error = 'Weight must be positive';
         } else {
           const v = parseFloat(value);
-          const unit = formData.weightUnit;
+          const unit = currentWeightUnit;
           if (unit === 'kg') {
             if (v < 20) error = 'Weight seems too low (min 20 kg)';
             else if (v > 300) error = 'Weight seems too high (max 300 kg)';
@@ -103,7 +105,10 @@ const Profile = () => {
           // Validate existing data
           const newErrors = {};
           ['age', 'height', 'weight'].forEach(field => {
-            const error = validateField(field, newFormData[field] || '');
+            const error = validateField(field, newFormData[field] || '', {
+              heightUnit: newFormData.heightUnit,
+              weightUnit: newFormData.weightUnit,
+            });
             if (error) newErrors[field] = error;
           });
           setValidationErrors(newErrors);
@@ -165,7 +170,7 @@ const Profile = () => {
         }
         const next = { ...prev, heightUnit: value, height: converted };
         // Re-validate after conversion
-        const err = validateField('height', next.height);
+        const err = validateField('height', next.height, { heightUnit: value });
         setValidationErrors(pe => ({ ...pe, height: err }));
         return next;
       });
@@ -185,7 +190,7 @@ const Profile = () => {
           }
         }
         const next = { ...prev, weightUnit: value, weight: converted };
-        const err = validateField('weight', next.weight);
+        const err = validateField('weight', next.weight, { weightUnit: value });
         setValidationErrors(pe => ({ ...pe, weight: err }));
         return next;
       });
@@ -238,7 +243,7 @@ const Profile = () => {
       // Round to sensible precision for the unit
       const rounded = n === '' ? '' : Number(n).toFixed(formData.heightUnit === 'cm' ? 1 : 2);
       setFormData(prev => ({ ...prev, height: rounded }));
-      const err = validateField('height', n);
+      const err = validateField('height', n, { heightUnit: formData.heightUnit });
       setValidationErrors(prev => ({ ...prev, height: err }));
     }
     if (name === 'weight') {
@@ -255,7 +260,7 @@ const Profile = () => {
       }
       const roundedW = n === '' ? '' : Number(n).toFixed(1);
       setFormData(prev => ({ ...prev, weight: roundedW }));
-      const err = validateField('weight', n);
+      const err = validateField('weight', n, { weightUnit: formData.weightUnit });
       setValidationErrors(prev => ({ ...prev, weight: err }));
     }
   };
@@ -273,7 +278,10 @@ const Profile = () => {
     // Final validation check before submission
     const finalErrors = {};
     ['age', 'height', 'weight'].forEach(field => {
-      const error = validateField(field, formData[field] || '');
+      const error = validateField(field, formData[field] || '', {
+        heightUnit: formData.heightUnit,
+        weightUnit: formData.weightUnit,
+      });
       if (error) finalErrors[field] = error;
     });
     
@@ -489,6 +497,7 @@ const Profile = () => {
                       } bg-white dark:bg-gray-700 text-neutral-900 dark:text-white focus:ring-2 focus:border-transparent transition-all duration-200`}
                       placeholder={`Height (${formData.heightUnit})`}
                       min={formData.heightUnit === 'cm' ? 100 : 3}
+                      max={formData.heightUnit === 'cm' ? 250 : 8.2}
                       step="0.1"
                       required
                       disabled={!isEditing}
@@ -529,6 +538,7 @@ const Profile = () => {
                       } bg-white dark:bg-gray-700 text-neutral-900 dark:text-white focus:ring-2 focus:border-transparent transition-all duration-200`}
                       placeholder={`Weight (${formData.weightUnit})`}
                       min={formData.weightUnit === 'kg' ? 20 : 44}
+                      max={formData.weightUnit === 'kg' ? 300 : 660}
                       step="0.1"
                       required
                       disabled={!isEditing}

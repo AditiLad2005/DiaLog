@@ -60,6 +60,17 @@ import hashlib
 
 # Load environment variables
 load_dotenv()
+GEMINI_API_KEY = os.getenv("GEMINI_API_KEY")
+GEMINI_MODEL = os.getenv("GEMINI_MODEL")  # optional override, e.g., gemini-1.5-flash-latest
+try:
+    import google.generativeai as genai
+    if GEMINI_API_KEY:
+        genai.configure(api_key=GEMINI_API_KEY)
+    GEMINI_AVAILABLE = True
+except Exception as _gem_e:
+    print("⚠️ Gemini not available:", _gem_e)
+    genai = None
+    GEMINI_AVAILABLE = False
 
 # Create FastAPI app
 app = FastAPI(
@@ -195,6 +206,28 @@ def translate_text(text: str, src: str, tgt: str) -> str:
     _tx_cache_set(text, text, src, tgt)
     return text
 
+@app.get("/ai/models")
+async def list_ai_models():
+    if not GEMINI_AVAILABLE or not GEMINI_API_KEY:
+        raise HTTPException(status_code=503, detail="AI service not available")
+    try:
+        models = genai.list_models()
+        names = []
+        for m in models:
+            # filter to generation-capable models if possible
+            try:
+                # Some SDKs expose supported_generation_methods
+                methods = getattr(m, 'supported_generation_methods', None)
+                if methods and ('generateContent' in methods or 'generate_content' in methods):
+                    names.append(getattr(m, 'name', str(m)))
+                else:
+                    names.append(getattr(m, 'name', str(m)))
+            except Exception:
+                names.append(getattr(m, 'name', str(m)))
+        return {"models": names}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"List models error: {str(e)}")
+
 class TranslateBatchRequest(BaseModel):
     texts: List[str]
     source: str = "en"
@@ -202,6 +235,108 @@ class TranslateBatchRequest(BaseModel):
 
 class TranslateBatchResponse(BaseModel):
     translations: List[str]
+class ChatMessage(BaseModel):
+    role: str  # 'user' | 'model'
+    content: str
+
+class ChatRequest(BaseModel):
+    messages: List[ChatMessage]
+
+class ChatResponse(BaseModel):
+    text: str
+
+@app.post("/ai/chat", response_model=ChatResponse)
+async def ai_chat(req: ChatRequest):
+    if not GEMINI_AVAILABLE or not GEMINI_API_KEY:
+        raise HTTPException(status_code=503, detail="AI service not available")
+    try:
+        # Keep conversations short server-side for cost/safety
+        history = [
+            {"role": m.role if m.role in ("user", "model") else "user", "parts": [{"text": m.content[:2000]}]}
+            for m in (req.messages or [])[-10:]
+            if m.content and isinstance(m.content, str)
+        ]
+
+        safety_preamble = (
+            "You are DiaLog, a diabetes-focused assistant.\n"
+            "- Provide conservative, safe dietary guidance.\n"
+            "- Prefer low glycemic load options; suggest safer alternatives.\n"
+            "- Avoid medical claims; include a brief non-medical advice disclaimer.\n"
+            "- Be concise and friendly."
+        )
+        last_user = None
+        for m in reversed(req.messages or []):
+            if m.role == 'user':
+                last_user = m.content
+                break
+        user_text = last_user or "Help me with DiaLog."
+        prompt = f"{safety_preamble}\n\nUser: {user_text}"
+
+        def _normalize(name: str) -> str:
+            return name.split('/', 1)[-1] if name and name.startswith('models/') else name
+
+        # Build candidate list
+        candidates = []
+        if GEMINI_MODEL:
+            candidates.append(GEMINI_MODEL)
+        # Query available models to construct a compatible list
+        try:
+            available = list(genai.list_models())
+            # Filter to those that support generation
+            def supports_gen(m):
+                methods = getattr(m, 'supported_generation_methods', None)
+                if not methods:
+                    return True
+                return ('generateContent' in methods) or ('generate_content' in methods)
+            names = [getattr(m, 'name', None) for m in available if supports_gen(m)]
+            names = [n for n in names if n]
+            # Prefer flash variants, then pro
+            flash = [n for n in names if 'flash' in n]
+            pro = [n for n in names if 'pro' in n]
+            others = [n for n in names if n not in flash and n not in pro]
+            ordered = flash + pro + others
+            # Normalize to plain ids
+            candidates.extend([_normalize(n) for n in ordered])
+        except Exception:
+            # Fallback to some common aliases
+            candidates.extend(["gemini-2.0-flash", "gemini-1.5-flash", "gemini-2.0-pro", "gemini-pro"]) 
+
+        # Deduplicate preserving order
+        seen = set()
+        model_candidates = []
+        for c in candidates:
+            if c and c not in seen:
+                seen.add(c)
+                model_candidates.append(c)
+
+        last_err = None
+        for model_name in model_candidates[:6]:
+            try:
+                model = genai.GenerativeModel(model_name)
+                try:
+                    chat = model.start_chat(history=history)
+                    result = chat.send_message(prompt)
+                except Exception:
+                    # Fallback: stateless generation
+                    result = model.generate_content(prompt)
+                # Extract text robustly
+                text = None
+                resp_obj = getattr(result, 'response', None)
+                if resp_obj is not None:
+                    t = getattr(resp_obj, 'text', None)
+                    text = t() if callable(t) else t
+                if not text:
+                    t2 = getattr(result, 'text', None)
+                    text = t2() if callable(t2) else t2
+                if text:
+                    return ChatResponse(text=text)
+            except Exception as inner:
+                last_err = inner
+                continue
+        # If all models failed, return a graceful message and expose the first few candidates to help config
+        raise HTTPException(status_code=502, detail=f"AI model unavailable. Tried: {model_candidates[:6]}. Last error: {last_err}")
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"AI error: {str(e)}")
 
 
 
