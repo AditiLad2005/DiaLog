@@ -44,6 +44,12 @@ function ProtectedRoute({ children }) {
 
 function App() {
   const [isAssistantOpen, setIsAssistantOpen] = React.useState(false);
+  const [authUser, setAuthUser] = React.useState(null);
+
+  React.useEffect(() => {
+    const unsub = auth.onAuthStateChanged((u) => setAuthUser(u));
+    return () => unsub();
+  }, []);
   return (
     <Router>
       <TranslationProvider>
@@ -51,9 +57,13 @@ function App() {
       <div className="flex flex-col min-h-screen">
         {/* Navigation */}
         <Navbar />
-        {/* Global AI Assistant */}
-        <AiAssistantButton onClick={() => setIsAssistantOpen(true)} />
-        <AiChatPanel isOpen={isAssistantOpen} onClose={() => setIsAssistantOpen(false)} />
+        {/* Global AI Assistant (only for authenticated users) */}
+        {authUser && (
+          <>
+            <AiAssistantButton onClick={() => setIsAssistantOpen(true)} />
+            <AiChatPanel isOpen={isAssistantOpen} onClose={() => setIsAssistantOpen(false)} />
+          </>
+        )}
         
         {/* Main Content */}
         <main className="flex-grow">

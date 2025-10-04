@@ -412,7 +412,15 @@ const Dashboard = () => {
         <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center mb-8">
           <div>
             <h1 className="text-3xl sm:text-4xl font-bold text-primary-700 dark:text-primary-400 mb-2">
-              Your Health Dashboard
+              {userProfile?.name ? (
+                <>
+                  Hello {userProfile.name},
+                  <br />
+                  Here is your Health Dashboard!
+                </>
+              ) : (
+                'Your Health Dashboard'
+              )}
             </h1>
             <p className="text-lg text-neutral-600 dark:text-neutral-300">
               Track your progress and manage your diabetes effectively
