@@ -15,6 +15,8 @@ import FoodSafety from './pages/FoodSafety';
 import { TranslationProvider } from './contexts/TranslationContext';
 import LiveTranslator from './components/LiveTranslator';
 import { auth } from './services/firebase';
+import AiAssistantButton from './components/AiAssistantButton';
+import AiChatPanel from './components/AiChatPanel';
 
 function ProtectedRoute({ children }) {
   const [authState, setAuthState] = React.useState({ loading: true, user: null });
@@ -41,6 +43,7 @@ function ProtectedRoute({ children }) {
 }
 
 function App() {
+  const [isAssistantOpen, setIsAssistantOpen] = React.useState(false);
   return (
     <Router>
       <TranslationProvider>
@@ -48,6 +51,9 @@ function App() {
       <div className="flex flex-col min-h-screen">
         {/* Navigation */}
         <Navbar />
+        {/* Global AI Assistant */}
+        <AiAssistantButton onClick={() => setIsAssistantOpen(true)} />
+        <AiChatPanel isOpen={isAssistantOpen} onClose={() => setIsAssistantOpen(false)} />
         
         {/* Main Content */}
         <main className="flex-grow">
