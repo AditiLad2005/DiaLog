@@ -7,6 +7,7 @@ import {
   ArrowPathIcon,
   CheckIcon
 } from '@heroicons/react/24/outline';
+import { T } from '../components/TranslatedText';
 
 const RegisterProfile = () => {
   const [formData, setFormData] = useState({
@@ -87,10 +88,10 @@ const RegisterProfile = () => {
         {/* Header */}
         <div className="text-center mb-8">
           <h1 className="text-3xl sm:text-4xl font-bold text-gray-900 mb-4">
-            Complete Your Profile
+            <T>Complete Your Profile</T>
           </h1>
           <p className="text-lg text-gray-600">
-            Help us personalize your diabetes management experience
+            <T>Help us personalize your diabetes management experience</T>
           </p>
         </div>
 
@@ -100,13 +101,13 @@ const RegisterProfile = () => {
             {/* Personal Information */}
             <div className="space-y-6">
               <h2 className="text-xl font-semibold text-gray-900 border-b border-gray-200 pb-2">
-                Personal Information
+                <T>Personal Information</T>
               </h2>
 
               {/* Name */}
               <div>
                 <label htmlFor="name" className="block text-sm font-medium text-gray-700 mb-2">
-                  Full Name
+                  <T>Full Name</T>
                 </label>
                 <div className="relative">
                   <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
@@ -128,7 +129,7 @@ const RegisterProfile = () => {
               {/* Email */}
               <div>
                 <label htmlFor="email" className="block text-sm font-medium text-gray-700 mb-2">
-                  Email Address
+                  <T>Email Address</T>
                 </label>
                 <div className="relative">
                   <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
@@ -151,7 +152,7 @@ const RegisterProfile = () => {
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-6">
                 <div>
                   <label htmlFor="age" className="block text-sm font-medium text-gray-700 mb-2">
-                    Age
+                    <T>Age</T>
                   </label>
                   <div className="relative">
                     <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
@@ -174,7 +175,7 @@ const RegisterProfile = () => {
 
                 <div>
                   <label htmlFor="gender" className="block text-sm font-medium text-gray-700 mb-2">
-                    Gender
+                    <T>Gender</T>
                   </label>
                   <select
                     id="gender"
@@ -184,10 +185,10 @@ const RegisterProfile = () => {
                     className="block w-full px-3 py-3 border border-gray-300 rounded-xl focus:ring-2 focus:ring-primary-500 focus:border-primary-500 transition-colors duration-200"
                     required
                   >
-                    <option value="">Select gender</option>
-                    <option value="male">Male</option>
-                    <option value="female">Female</option>
-                    <option value="other">Other</option>
+                    <option value=""><T>Select gender</T></option>
+                    <option value="male"><T>Male</T></option>
+                    <option value="female"><T>Female</T></option>
+                    <option value="other"><T>Other</T></option>
                   </select>
                 </div>
               </div>
@@ -196,7 +197,7 @@ const RegisterProfile = () => {
             {/* Physical Measurements */}
             <div className="space-y-6">
               <h2 className="text-xl font-semibold text-gray-900 border-b border-gray-200 pb-2">
-                Physical Measurements
+                <T>Physical Measurements</T>
               </h2>
 
               {/* Height */}

@@ -18,6 +18,7 @@ import MealRiskDonutChart from '../components/DonutChart';
 import HealthPlanModal from '../components/HealthPlanModal';
 
 import { auth, fetchUserLogs, fetchUserProfile } from "../services/firebase";
+import { T } from '../components/TranslatedText';
 
 const Dashboard = () => {
   const [bloodSugarData, setBloodSugarData] = useState(null);
@@ -462,7 +463,9 @@ const Dashboard = () => {
       )}
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
         {(!recentLogs || recentLogs.length === 0) && !error && (
-          <div className="text-center py-12 text-white text-lg">No meal logs found. Log a meal to see your dashboard analytics.</div>
+          <div className="text-center py-12 text-white text-lg">
+            <T>No meal logs found. Log a meal to see your dashboard analytics.</T>
+          </div>
         )}
         {/* Header */}
         <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center mb-8">
@@ -475,11 +478,11 @@ const Dashboard = () => {
                   Here is your Health Dashboard!
                 </>
               ) : (
-                'Your Health Dashboard'
+                '<T>Your Health Dashboard</T>'
               )}
             </h1>
             <p className="text-lg text-neutral-600 dark:text-neutral-300">
-              Track your progress and manage your diabetes effectively
+              <T>Track your progress and manage your diabetes effectively</T>
             </p>
           </div>
           <Link
@@ -487,7 +490,7 @@ const Dashboard = () => {
             className="mt-4 sm:mt-0 inline-flex items-center px-6 py-3 bg-primary-600 hover:bg-primary-700 text-white font-semibold rounded-xl transition-all duration-300 shadow-medium hover:shadow-strong transform hover:-translate-y-1"
           >
             <PlusIcon className="h-5 w-5 mr-2" />
-            Log New Meal
+            <T>Log New Meal</T>
           </Link>
         </div>
 
@@ -499,9 +502,9 @@ const Dashboard = () => {
                 <ChartBarIcon className="h-6 w-6 text-primary-600 dark:text-primary-400" />
               </div>
               <div className="ml-4">
-                <p className="text-sm text-neutral-600 dark:text-neutral-400">Avg Pre-meal</p>
+                <p className="text-sm text-neutral-600 dark:text-neutral-400"><T>Avg Pre-meal</T></p>
                 <p className="text-2xl font-bold text-neutral-900 dark:text-white">{stats.averageFasting}</p>
-                <p className="text-xs text-neutral-500 dark:text-neutral-500">mg/dL</p>
+                <p className="text-xs text-neutral-500 dark:text-neutral-500"><T>mg/dL</T></p>
               </div>
             </div>
           </div>
@@ -512,9 +515,9 @@ const Dashboard = () => {
                 <ChartBarIcon className="h-6 w-6 text-success-600 dark:text-success-400" />
               </div>
               <div className="ml-4">
-                <p className="text-sm text-neutral-600 dark:text-neutral-400">Avg Post-Meal</p>
+                <p className="text-sm text-neutral-600 dark:text-neutral-400"><T>Avg Post-Meal</T></p>
                 <p className="text-2xl font-bold text-neutral-900 dark:text-white">{stats.averagePostMeal}</p>
-                <p className="text-xs text-neutral-500 dark:text-neutral-500">mg/dL</p>
+                <p className="text-xs text-neutral-500 dark:text-neutral-500"><T>mg/dL</T></p>
               </div>
             </div>
           </div>
@@ -525,9 +528,9 @@ const Dashboard = () => {
                 <CalendarDaysIcon className="h-6 w-6 text-secondary-600 dark:text-secondary-400" />
               </div>
               <div className="ml-4">
-                <p className="text-sm text-neutral-600 dark:text-neutral-400">Total Logs</p>
+                <p className="text-sm text-neutral-600 dark:text-neutral-400"><T>Total Logs</T></p>
                 <p className="text-2xl font-bold text-neutral-900 dark:text-white">{stats.totalLogs}</p>
-                <p className="text-xs text-neutral-500 dark:text-neutral-500">entries</p>
+                <p className="text-xs text-neutral-500 dark:text-neutral-500"><T>entries</T></p>
               </div>
             </div>
           </div>
@@ -538,9 +541,9 @@ const Dashboard = () => {
                 <ExclamationTriangleIcon className="h-6 w-6 text-danger-600 dark:text-danger-400" />
               </div>
               <div className="ml-4">
-                <p className="text-sm text-neutral-600 dark:text-neutral-400">Risky Meals</p>
+                <p className="text-sm text-neutral-600 dark:text-neutral-400"><T>Risky Meals</T></p>
                 <p className="text-2xl font-bold text-neutral-900 dark:text-white">{stats.riskyMeals}</p>
-                <p className="text-xs text-neutral-500 dark:text-neutral-500">this week</p>
+                <p className="text-xs text-neutral-500 dark:text-neutral-500"><T>this week</T></p>
               </div>
             </div>
           </div>
@@ -551,19 +554,19 @@ const Dashboard = () => {
           {/* Recent Logs */}
           <div className="bg-white dark:bg-gray-800 rounded-xl shadow-soft p-6 transition-colors duration-200">
             <div className="flex justify-between items-center mb-6">
-              <h2 className="text-xl font-semibold text-gray-900 dark:text-white">Recent Meal Logs</h2>
+              <h2 className="text-xl font-semibold text-gray-900 dark:text-white"><T>Recent Meal Logs</T></h2>
               <Link
                 to="/meal-log"
                 className="text-primary-600 dark:text-primary-400 hover:text-primary-700 dark:hover:text-primary-300 font-medium"
               >
-                View All
+                <T>View All</T>
               </Link>
             </div>
 
             <div className="space-y-4">
               {recentLogs.length === 0 ? (
                 <div className="p-4 rounded-lg border-2 border-neutral-300 dark:border-neutral-700 bg-neutral-100 dark:bg-neutral-900 text-center text-neutral-500 dark:text-neutral-400">
-                  No meal logs found. Log a meal to see your recent entries here.
+                  <T>No meal logs found. Log a meal to see your recent entries here.</T>
                 </div>
               ) : (
                 <>
@@ -578,7 +581,7 @@ const Dashboard = () => {
                       : [];
                     
                     const displayName = mealNames.length === 0 
-                      ? 'Unknown Meal'
+                      ? 'Unknown Meal' // Note: This will be handled in JSX rendering
                       : mealNames.length === 1 
                       ? mealNames[0]
                       : mealNames.length === 2
@@ -635,7 +638,7 @@ const Dashboard = () => {
                         <div className="absolute top-2 right-2 opacity-0 group-hover:opacity-100 transition-opacity duration-200">
                           <div className="flex items-center space-x-1 px-2 py-1 bg-white dark:bg-gray-800 rounded-full shadow-md">
                             <CursorArrowRaysIcon className="h-3 w-3 text-primary-600 dark:text-primary-400" />
-                            <span className="text-xs text-primary-600 dark:text-primary-400 font-medium">View Health Plan</span>
+                            <span className="text-xs text-primary-600 dark:text-primary-400 font-medium"><T>View Health Plan</T></span>
                           </div>
                         </div>
                         <div className="flex items-center justify-between">
@@ -653,7 +656,9 @@ const Dashboard = () => {
                               </div>
                             )}
                             <div>
-                              <h3 className={`font-semibold ${risk === 'high' ? 'text-white' : 'text-gray-900 dark:text-white'}`}>{displayName}</h3>
+                              <h3 className={`font-semibold ${risk === 'high' ? 'text-white' : 'text-gray-900 dark:text-white'}`}>
+                                {displayName === 'Unknown Meal' ? <T>Unknown Meal</T> : displayName}
+                              </h3>
                               <p className={`text-sm ${risk === 'high' ? 'text-white' : 'text-gray-600 dark:text-gray-400'}`}>
                                 {createdAt} {time ? `• ${time}` : ''}
                                 {mealNames.length > 1 && (
@@ -662,7 +667,7 @@ const Dashboard = () => {
                                       ? 'bg-white/20 text-white' 
                                       : 'bg-primary-100 dark:bg-primary-900/30 text-primary-700 dark:text-primary-300'
                                   }`}>
-                                    {mealNames.length} items
+                                    <T>{mealNames.length} items</T>
                                   </span>
                                 )}
                               </p>
@@ -671,11 +676,11 @@ const Dashboard = () => {
                           <div className="text-right">
                             <div className="flex space-x-4 text-sm">
                               <div>
-                                <p className={`text-gray-600 dark:text-gray-400 ${risk === 'high' ? 'text-white' : ''}`}>Fasting</p>
+                                <p className={`text-gray-600 dark:text-gray-400 ${risk === 'high' ? 'text-white' : ''}`}><T>Fasting</T></p>
                                 <p className={`font-semibold ${risk === 'high' ? 'text-white' : 'text-gray-900 dark:text-white'}`}>{fasting ? `${fasting} mg/dL` : '-'}</p>
                               </div>
                               <div>
-                                <p className={`text-gray-600 dark:text-gray-400 ${risk === 'high' ? 'text-white' : ''}`}>Post-Meal</p>
+                                <p className={`text-gray-600 dark:text-gray-400 ${risk === 'high' ? 'text-white' : ''}`}><T>Post-Meal</T></p>
                                 <p className={`font-semibold ${risk === 'high' ? 'text-white' : 'text-gray-900 dark:text-white'}`}>{postMeal ? `${postMeal} mg/dL` : '-'}</p>
                               </div>
                             </div>
@@ -692,7 +697,7 @@ const Dashboard = () => {
                       className="w-full mt-4 px-4 py-2 text-sm font-medium text-primary-600 dark:text-primary-400 hover:text-primary-700 dark:hover:text-primary-300 bg-primary-50 dark:bg-primary-900/20 hover:bg-primary-100 dark:hover:bg-primary-900/30 rounded-lg transition-colors duration-200 flex items-center justify-center space-x-2"
                     >
                       <span>
-                        {showAllLogs ? 'Show Less' : `Show ${recentLogs.length - 5} More`}
+                        {showAllLogs ? <T>Show Less</T> : <T>Show {recentLogs.length - 5} More</T>}
                       </span>
                       {showAllLogs ? (
                         <ChevronUpIcon className="h-4 w-4" />
@@ -776,13 +781,13 @@ const Dashboard = () => {
             {/* Blood Sugar Trends Line Chart */}
             <BloodSugarLineChart 
               data={bloodSugarData?.data} 
-              title="7-Day Blood Sugar Trends"
+              title={<T>7-Day Blood Sugar Trends</T>}
             />
             
             {/* Meal Risk Distribution Donut Chart */}
             <MealRiskDonutChart 
               data={riskData?.mealData} 
-              title="Recent Meals Analysis"
+              title={<T>Recent Meals Analysis</T>}
               showMealNames={true}
             />
           </div>
@@ -792,7 +797,7 @@ const Dashboard = () => {
             <div className="mt-6 bg-white/70 dark:bg-gray-800/70 backdrop-blur-sm rounded-2xl p-6 shadow-soft border border-neutral-100 dark:border-neutral-700">
               <h3 className="text-lg font-semibold text-neutral-900 dark:text-white mb-4 flex items-center">
                 <SparklesIcon className="h-5 w-5 mr-2 text-primary-600 dark:text-primary-400" />
-                Health Insights from Model Training
+                <T>Health Insights from Model Training</T>
               </h3>
               <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
                 {insights.insights.map((insight, index) => (

@@ -1,7 +1,7 @@
 
 import { initializeApp } from "firebase/app";
 import { getFirestore, collection, addDoc, setDoc, doc, serverTimestamp, updateDoc, getDoc, getDocs, query, orderBy, where, limit as firestoreLimit } from "firebase/firestore";
-import { getAuth } from "firebase/auth";
+import { getAuth, GoogleAuthProvider, signInWithPopup, createUserWithEmailAndPassword, signInWithEmailAndPassword } from "firebase/auth";
 
 const firebaseConfig = {
     apiKey: process.env.REACT_APP_FIREBASE_API_KEY,
@@ -16,6 +16,92 @@ const firebaseConfig = {
 const app = initializeApp(firebaseConfig);
 export const db = getFirestore(app);
 export const auth = getAuth(app);
+
+// Google Auth Provider
+export const googleProvider = new GoogleAuthProvider();
+googleProvider.setCustomParameters({
+  prompt: 'select_account'
+});
+
+// Google Sign-In function
+export const signInWithGoogle = async () => {
+  try {
+    const result = await signInWithPopup(auth, googleProvider);
+    const user = result.user;
+    
+    // Check if user profile exists, if not create one
+    const profileDoc = doc(db, `users/${user.uid}/profile`, "main");
+    const profileSnapshot = await getDoc(profileDoc);
+    
+    if (!profileSnapshot.exists()) {
+      // Create basic profile for new Google users
+      await setDoc(doc(db, 'users', user.uid), {
+        email: user.email,
+        name: user.displayName || '',
+        photoURL: user.photoURL || '',
+        provider: 'google',
+        createdAt: serverTimestamp(),
+        profileComplete: false
+      });
+      
+      // Create empty profile document
+      await setDoc(profileDoc, {
+        name: user.displayName || '',
+        email: user.email,
+        photoURL: user.photoURL || '',
+        provider: 'google',
+        createdAt: serverTimestamp(),
+        profileComplete: false
+      });
+    }
+    
+    return result;
+  } catch (error) {
+    console.error("Error signing in with Google:", error);
+    throw error;
+  }
+};
+
+// Email/Password authentication functions
+export const signUpWithEmail = async (email, password, username) => {
+  try {
+    const userCredential = await createUserWithEmailAndPassword(auth, email, password);
+    const user = userCredential.user;
+    
+    // Create user document in Firestore
+    await setDoc(doc(db, 'users', user.uid), {
+      username,
+      email,
+      provider: 'email',
+      createdAt: serverTimestamp(),
+      profileComplete: false
+    });
+    
+    // Create empty profile document
+    const profileDoc = doc(db, `users/${user.uid}/profile`, "main");
+    await setDoc(profileDoc, {
+      name: username,
+      email,
+      provider: 'email',
+      createdAt: serverTimestamp(),
+      profileComplete: false
+    });
+    
+    return userCredential;
+  } catch (error) {
+    console.error("Error creating account:", error);
+    throw error;
+  }
+};
+
+export const signInWithEmail = async (email, password) => {
+  try {
+    return await signInWithEmailAndPassword(auth, email, password);
+  } catch (error) {
+    console.error("Error signing in:", error);
+    throw error;
+  }
+};
 
 export const saveMealLog = async (mealData) => {
     try {

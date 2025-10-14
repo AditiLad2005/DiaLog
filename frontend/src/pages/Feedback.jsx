@@ -5,6 +5,7 @@ import {
   ChatBubbleLeftRightIcon
 } from '@heroicons/react/24/outline';
 import { StarIcon as StarIconSolid } from '@heroicons/react/24/solid';
+import { T } from '../components/TranslatedText';
 
 const Feedback = () => {
   const [rating, setRating] = useState(0);
@@ -26,7 +27,7 @@ const Feedback = () => {
           <div className="w-16 h-16 bg-green-100 rounded-full flex items-center justify-center mx-auto mb-4">
             <PaperAirplaneIcon className="h-8 w-8 text-green-600" />
           </div>
-          <h2 className="text-2xl font-bold text-gray-900 mb-2">Thank You!</h2>
+          <h2 className="text-2xl font-bold text-gray-900 mb-2"><T>Thank You!</T></h2>
           <p className="text-gray-600 mb-6">
             Your feedback has been submitted successfully. We appreciate your input in helping us improve DiaLog.
           </p>
