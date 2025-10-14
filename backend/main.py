@@ -58,10 +58,23 @@ import requests
 import time
 import hashlib
 
-# Load environment variables
-load_dotenv()
-GEMINI_API_KEY = os.getenv("GEMINI_API_KEY")
+# Load environment variables from this backend folder regardless of CWD
+BASE_DIR = Path(__file__).resolve().parent
+ENV_FILES_LOADED = []
+if (BASE_DIR / '.env').exists():
+    load_dotenv(BASE_DIR / '.env', override=True)
+    ENV_FILES_LOADED.append(str((BASE_DIR / '.env').resolve()))
+elif (BASE_DIR / '.env.local').exists():
+    load_dotenv(BASE_DIR / '.env.local', override=True)
+    ENV_FILES_LOADED.append(str((BASE_DIR / '.env.local').resolve()))
+else:
+    load_dotenv(override=True)
+    ENV_FILES_LOADED.append('process env only')
+
+# Read and normalize Gemini settings
+GEMINI_API_KEY = (os.getenv("GEMINI_API_KEY") or "").strip()
 GEMINI_MODEL = os.getenv("GEMINI_MODEL")  # optional override, e.g., gemini-1.5-flash-latest
+GEMINI_DEBUG_ERRORS = (os.getenv("GEMINI_DEBUG_ERRORS") or "").strip() == "1"
 try:
     import google.generativeai as genai
     if GEMINI_API_KEY:
@@ -71,6 +84,8 @@ except Exception as _gem_e:
     print("⚠️ Gemini not available:", _gem_e)
     genai = None
     GEMINI_AVAILABLE = False
+
+# (defined after app creation below)
 
 # Create FastAPI app
 app = FastAPI(
@@ -112,6 +127,132 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+@app.get("/ai/env-check")
+async def ai_env_check():
+    """Return key prefix/length, selected model, cwd, and which env files were loaded."""
+    key = os.getenv("GEMINI_API_KEY") or ""
+    return {
+        "key_prefix": key[:10],
+        "key_len": len(key),
+        "model": GEMINI_MODEL or "gemini-1.5-flash",
+        "cwd": os.getcwd(),
+        "env_files_loaded": ENV_FILES_LOADED,
+    }
+
+@app.get("/ai/key-quick")
+async def ai_key_quick():
+    """Minimal key validity check: attempts list_models; returns status only."""
+    if not GEMINI_API_KEY:
+        raise HTTPException(status_code=400, detail="Missing GEMINI_API_KEY")
+    if not GEMINI_AVAILABLE:
+        raise HTTPException(status_code=503, detail="Gemini SDK not available")
+    try:
+        models = genai.list_models()
+        # success if iterable returns at least one item (or simply does not throw)
+        count = 0
+        for _ in models:
+            count += 1
+            if count > 0:
+                break
+        return {"valid": True, "sample_count": count}
+    except Exception as e:
+        msg = str(e)
+        low = msg.lower()
+        if ("api key not valid" in low) or ("api_key_invalid" in low):
+            detail = "Invalid Gemini API key"
+            if GEMINI_DEBUG_ERRORS:
+                detail += f": {msg}"
+            raise HTTPException(status_code=401, detail=detail)
+        if "permission_denied" in low or "permission" in low:
+            detail = "Permission denied for Generative Language API"
+            if GEMINI_DEBUG_ERRORS:
+                detail += f": {msg}"
+            raise HTTPException(status_code=403, detail=detail)
+        raise HTTPException(status_code=500, detail=f"Key check error: {msg}")
+
+@app.get("/ai/diagnose-key")
+async def ai_diagnose_key():
+    """Deeper diagnostics: SDK list_models, REST list models, SDK and REST minimal generate attempts."""
+    details: Dict[str, Any] = {
+        "sdk_list_models": None,
+        "rest_list_models": None,
+        "sdk_generate": None,
+        "rest_generate": None,
+        "api_key_prefix": GEMINI_API_KEY[:8],
+        "model": GEMINI_MODEL or "gemini-1.5-flash"
+    }
+    if not GEMINI_API_KEY:
+        raise HTTPException(status_code=400, detail="Missing GEMINI_API_KEY")
+    model_name = GEMINI_MODEL or "gemini-2.5-flash"
+    # SDK list_models
+    try:
+        if not GEMINI_AVAILABLE:
+            details["sdk_list_models"] = {"error": "SDK not available"}
+        else:
+            ms = genai.list_models()
+            names = []
+            for m in ms:
+                names.append(getattr(m, 'name', str(m)))
+                if len(names) >= 5:
+                    break
+            details["sdk_list_models"] = {"ok": True, "sample": names}
+    except Exception as e:
+        details["sdk_list_models"] = {"error": str(e)}
+    # REST list models (v1)
+    try:
+        rest_url = "https://generativelanguage.googleapis.com/v1/models"
+        r = requests.get(rest_url, params={"key": GEMINI_API_KEY}, timeout=10)
+        body = None
+        try:
+            body = r.json()
+        except Exception:
+            body = None
+        details["rest_list_models"] = {"status": r.status_code, "body_keys": list(body.keys()) if isinstance(body, dict) else None}
+        if r.status_code != 200:
+            details["rest_list_models"]["error_body"] = (r.text or "")[:500]
+    except Exception as e:
+        details["rest_list_models"] = {"error": str(e)}
+    # SDK minimal generate
+    try:
+        if GEMINI_AVAILABLE:
+            mdl = genai.GenerativeModel(model_name)
+            res = mdl.generate_content("Ping")
+            txt = None
+            resp_obj = getattr(res, 'response', None)
+            if resp_obj is not None:
+                t = getattr(resp_obj, 'text', None)
+                txt = t() if callable(t) else t
+            if not txt:
+                t2 = getattr(res, 'text', None)
+                txt = t2() if callable(t2) else t2
+            details["sdk_generate"] = {"ok": True, "text_preview": (txt or "")[:120]}
+        else:
+            details["sdk_generate"] = {"error": "SDK not available"}
+    except Exception as e:
+        details["sdk_generate"] = {"error": str(e)}
+    # REST minimal generate
+    try:
+        rest_gen_url = f"https://generativelanguage.googleapis.com/v1/models/{model_name}:generateContent"
+        payload = {"contents": [{"parts": [{"text": "Ping"}]}]}
+        rg = requests.post(rest_gen_url, json=payload, params={"key": GEMINI_API_KEY}, timeout=12)
+        if rg.status_code == 200:
+            data = rg.json()
+            cand = (data.get("candidates") or [{}])[0]
+            part0 = (cand.get("content", {}).get("parts") or [{}])[0]
+            txt = part0.get("text") or ""
+            details["rest_generate"] = {"ok": True, "text_preview": txt[:120]}
+        else:
+            details["rest_generate"] = {"status": rg.status_code, "error_body": (rg.text or "")[:500]}
+    except Exception as e:
+        details["rest_generate"] = {"error": str(e)}
+    # classify overall status
+    overall = "partial-success"
+    if details.get("sdk_generate", {}).get("ok") or details.get("rest_generate", {}).get("ok"):
+        overall = "success"
+    elif any((isinstance(details.get(k), dict) and details.get(k, {}).get("error") for k in ["sdk_list_models", "rest_list_models", "sdk_generate", "rest_generate"])):
+        overall = "errors"
+    return {"overall": overall, "diagnostics": details}
 
 # Data and model paths
 BASE_DIR = Path(__file__).resolve().parent
@@ -331,11 +472,62 @@ async def ai_chat(req: ChatRequest):
                 if text:
                     return ChatResponse(text=text)
             except Exception as inner:
+                # Map known auth/quota errors precisely
+                emsg = str(inner)
                 last_err = inner
+                low = emsg.lower()
+                if ("api key not valid" in low) or ("api_key_invalid" in low):
+                    detail = "Invalid Gemini API key"
+                    if GEMINI_DEBUG_ERRORS:
+                        detail += f": {emsg}"
+                    raise HTTPException(status_code=401, detail=detail)
+                if ("permission" in low) or ("permission_denied" in low):
+                    detail = "Permission denied for Gemini model"
+                    if GEMINI_DEBUG_ERRORS:
+                        detail += f": {emsg}"
+                    raise HTTPException(status_code=403, detail=detail)
+                if ("quota" in low) or ("rate" in low) or ("429" in low):
+                    raise HTTPException(status_code=429, detail="Gemini quota exceeded")
+                # else continue to next candidate
                 continue
+        # If SDK attempts failed on all candidates, try REST fallback once with the first candidate
+        try:
+            fallback_model = model_candidates[0] if model_candidates else (GEMINI_MODEL or "gemini-2.5-flash")
+            rest_url = f"https://generativelanguage.googleapis.com/v1/models/{fallback_model}:generateContent"
+            payload = {"contents": [{"parts": [{"text": prompt}]}]}
+            r = requests.post(rest_url, json=payload, params={"key": GEMINI_API_KEY}, timeout=18)
+            if r.status_code == 200:
+                data = r.json()
+                candidates = data.get("candidates") or []
+                if candidates:
+                    content = candidates[0].get("content") or {}
+                    parts = content.get("parts") or []
+                    if parts and isinstance(parts[0], dict):
+                        txt = parts[0].get("text")
+                        if txt:
+                            return ChatResponse(text=txt)
+            elif r.status_code == 401:
+                detail = "Invalid Gemini API key (REST)"
+                if GEMINI_DEBUG_ERRORS:
+                    detail += f" body={r.text[:200]}"
+                raise HTTPException(status_code=401, detail=detail)
+            elif r.status_code == 403:
+                detail = "Gemini permission denied (REST)"
+                if GEMINI_DEBUG_ERRORS:
+                    detail += f" body={r.text[:200]}"
+                raise HTTPException(status_code=403, detail=detail)
+            elif r.status_code in (429,):
+                raise HTTPException(status_code=429, detail="Gemini quota exceeded")
+        except HTTPException:
+            raise
+        except Exception as rest_e:
+            last_err = rest_e
         # If all models failed, return a graceful message and expose the first few candidates to help config
         raise HTTPException(status_code=502, detail=f"AI model unavailable. Tried: {model_candidates[:6]}. Last error: {last_err}")
     except Exception as e:
+        # Preserve mapped HTTPExceptions
+        if isinstance(e, HTTPException):
+            raise
         raise HTTPException(status_code=500, detail=f"AI error: {str(e)}")
 
 
