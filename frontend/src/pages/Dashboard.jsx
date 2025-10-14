@@ -80,17 +80,19 @@ const Dashboard = () => {
       const entries = logs.map((log, idx) => {
         const pm = parseFloat(log.sugar_level_post || log.postMealSugar || 0);
         const fasting = parseFloat(log.sugar_level_fasting || log.fastingSugar || 0);
-        const mealName = Array.isArray(log.meals_taken) && log.meals_taken.length > 0
-          ? (log.meals_taken[0].meal || '')
-          : (log.meal_name || log.meal || '');
-        const timeOfDay = (Array.isArray(log.meals_taken) && log.meals_taken.length > 0
-          ? (log.meals_taken[0].time_of_day || '')
-          : (log.time_of_day || '')).toString().toLowerCase();
+        // Get all meal names from the log (for multi-meal analysis)
+        const meals = Array.isArray(log.meals_taken) && log.meals_taken.length > 0 
+          ? log.meals_taken 
+          : (log.meal_name || log.meal ? [{ meal: log.meal_name || log.meal, time_of_day: log.time_of_day }] : []);
+        
+        const mealNames = meals.map(m => m.meal || m.meal_name || '').filter(Boolean);
+        const mealName = mealNames.join(', '); // Combine all meal names for analysis
+        const timeOfDay = (meals.length > 0 ? meals[0].time_of_day : (log.time_of_day || '')).toString().toLowerCase();
         const createdAt = log.createdAt?.toDate?.()
           ? log.createdAt.toDate()
           : (log.createdAt ? new Date(log.createdAt) : new Date());
         const dow = createdAt.getDay(); // 0=Sun..6=Sat
-        return { pm, fasting, mealName, timeOfDay, createdAt, dow };
+        return { pm, fasting, mealName, mealNames, timeOfDay, createdAt, dow };
       }).filter(e => !isNaN(e.pm) && e.pm > 0);
 
       const insights = [];
@@ -239,6 +241,20 @@ const Dashboard = () => {
           setError(`Error fetching logs from Firestore: ${err.message}`);
           logs = [];
         }
+        // Sort logs by creation date (most recent first) to ensure proper ordering
+        logs.sort((a, b) => {
+          const dateA = a.createdAt ? (a.createdAt instanceof Date ? a.createdAt : new Date(a.createdAt)) : new Date(0);
+          const dateB = b.createdAt ? (b.createdAt instanceof Date ? b.createdAt : new Date(b.createdAt)) : new Date(0);
+          return dateB - dateA; // Most recent first
+        });
+        
+        console.log('Sorted logs for chart:', logs.slice(0, 7).map(log => ({
+          date: log.createdAt ? (log.createdAt instanceof Date ? log.createdAt : new Date(log.createdAt)) : new Date(),
+          fasting: parseFloat(log.sugar_level_fasting || log.fastingSugar || 0),
+          postMeal: parseFloat(log.sugar_level_post || log.postMealSugar || 0),
+          timeOfDay: Array.isArray(log.meals_taken) && log.meals_taken.length > 0 ? log.meals_taken[0].time_of_day : (log.time_of_day || 'Unknown')
+        })));
+
         setRecentLogs(logs);
 
         // Fetch user profile for recommendations
@@ -267,13 +283,38 @@ const Dashboard = () => {
         const avgPostMeal = logs.length ? (postMealSum / logs.length) : 0;
 
         setBloodSugarData({
-          data: logs.slice(0, 7).map(log => ({
-            date: log.createdAt ? (log.createdAt instanceof Date ? log.createdAt.toLocaleDateString() : new Date(log.createdAt).toLocaleDateString()) : new Date().toLocaleDateString(),
-            time: Array.isArray(log.meals_taken) && log.meals_taken.length > 0 ? log.meals_taken[0].time_of_day : (log.time_of_day || 'Unknown'),
-            fasting: parseFloat(log.sugar_level_fasting || log.fastingSugar || 0),
-            postMeal: parseFloat(log.sugar_level_post || log.postMealSugar || 0),
-            prediction: log.prediction?.risk_level || log.prediction?.risk || log.riskLevel || 'unknown',
-          })),
+          data: logs.slice(0, 7).reverse().map((log, index) => {
+            const logDate = log.createdAt ? (log.createdAt instanceof Date ? log.createdAt : new Date(log.createdAt)) : new Date();
+            const timeOfDay = Array.isArray(log.meals_taken) && log.meals_taken.length > 0 ? log.meals_taken[0].time_of_day : (log.time_of_day || 'Unknown');
+            
+            // Get meal info for better labeling
+            const meals = Array.isArray(log.meals_taken) && log.meals_taken.length > 0 
+              ? log.meals_taken 
+              : (log.meal ? [{ meal: log.meal }] : []);
+            const mealNames = meals.map(m => m.meal || m.meal_name).filter(Boolean);
+            const mealLabel = mealNames.length > 0 ? mealNames[0] : 'Meal';
+            
+            // Create more descriptive time label with actual timestamp
+            const dateStr = logDate.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
+            const timeStr = logDate.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' });
+            const timeLabel = `${timeOfDay} (${dateStr} ${timeStr})`;
+            
+            // Add meal info and timestamp to make entries more distinguishable
+            const displayTime = mealNames.length > 1 
+              ? `${timeOfDay} - ${mealLabel} +${mealNames.length - 1} (${timeStr})`
+              : `${timeOfDay} - ${mealLabel} (${timeStr})`;
+            
+            return {
+              date: dateStr,
+              time: displayTime,
+              fullTime: timeLabel,
+              fasting: parseFloat(log.sugar_level_fasting || log.fastingSugar || 0),
+              postMeal: parseFloat(log.sugar_level_post || log.postMealSugar || 0),
+              prediction: log.prediction?.risk_level || log.prediction?.risk || log.riskLevel || 'unknown',
+              logId: log.id || `log_${index}`,
+              mealInfo: mealNames.join(', ')
+            };
+          }),
           summary: {
             avgFasting,
             avgPostMeal,
@@ -352,28 +393,42 @@ const Dashboard = () => {
 
   // Handle meal click to show health plan
   const handleMealClick = (log) => {
-    const mealName = Array.isArray(log.meals_taken) && log.meals_taken.length > 0 
-      ? log.meals_taken[0].meal 
-      : (log.meal_name || log.meal || 'Unknown Meal');
+    // Extract all meals from the log (support multiple meals)
+    const meals = Array.isArray(log.meals_taken) && log.meals_taken.length > 0 
+      ? log.meals_taken 
+      : (log.meal ? [{ meal: log.meal, time_of_day: log.time_of_day }] : []);
     
-    // Get risk level from various sources or determine from food content
-    let risk = log.riskLevel || log.prediction?.risk_level || log.prediction?.risk || 
+    const mealNames = meals.length > 0 
+      ? meals.map(m => m.meal || m.meal_name).filter(Boolean)
+      : [];
+    
+    // Create display name for the complete meal combination
+    const displayName = mealNames.length === 0 
+      ? 'Unknown Meal'
+      : mealNames.length === 1 
+      ? mealNames[0]
+      : mealNames.length === 2
+      ? `${mealNames[0]} + ${mealNames[1]}`
+      : `${mealNames[0]} + ${mealNames.length - 1} more items`;
+    
+    // Get risk level (prefer overall_risk_level for multi-meal combinations)
+    let risk = log.prediction?.overall_risk_level || log.riskLevel || log.prediction?.risk_level || log.prediction?.risk || 
       (log.prediction?.recommendations && log.prediction.recommendations[0]?.risk_level);
     
-    // If no risk level found, determine from food content and blood sugar
+    // If no risk level found, determine from all food content and blood sugar
     if (!risk) {
-      const foodLower = mealName.toLowerCase();
+      const allMealText = mealNames.join(' ').toLowerCase();
       const postMealSugar = log.sugar_level_post || log.postMealSugar || 0;
       
       // High risk indicators
-      if (foodLower.includes('sweet') || foodLower.includes('dessert') || foodLower.includes('cake') ||
-          foodLower.includes('sugar') || foodLower.includes('ice cream') || foodLower.includes('chocolate') ||
+      if (allMealText.includes('sweet') || allMealText.includes('dessert') || allMealText.includes('cake') ||
+          allMealText.includes('sugar') || allMealText.includes('ice cream') || allMealText.includes('chocolate') ||
           postMealSugar > 200) {
         risk = 'high';
       }
       // Medium risk indicators
-      else if (foodLower.includes('rice') || foodLower.includes('bread') || foodLower.includes('pasta') ||
-               foodLower.includes('fried') || foodLower.includes('potato') || foodLower.includes('noodles') ||
+      else if (allMealText.includes('rice') || allMealText.includes('bread') || allMealText.includes('pasta') ||
+               allMealText.includes('fried') || allMealText.includes('potato') || allMealText.includes('noodles') ||
                (postMealSugar > 140 && postMealSugar <= 200)) {
         risk = 'medium';
       }
@@ -384,13 +439,14 @@ const Dashboard = () => {
     }
     
     setSelectedMeal({
-      mealName: mealName,
+      mealName: displayName,
+      allMeals: mealNames, // Pass all meal names for the modal to use
       timestamp: log.createdAt ? (log.createdAt instanceof Date ? log.createdAt.toLocaleDateString() : new Date(log.createdAt).toLocaleDateString()) : new Date().toLocaleDateString(),
       fastingSugar: log.sugar_level_fasting || log.fastingSugar || '',
       postMealSugar: log.sugar_level_post || log.postMealSugar || '',
-      timeOfDay: Array.isArray(log.meals_taken) && log.meals_taken.length > 0 
-        ? log.meals_taken[0].time_of_day 
-        : (log.time_of_day || '')
+      timeOfDay: meals.length > 0 ? meals[0].time_of_day : (log.time_of_day || ''),
+      isMultipleMeals: mealNames.length > 1, // Flag to indicate it's a combination
+      mealCount: mealNames.length
     });
     
     setSelectedRiskLevel(risk);
@@ -504,12 +560,27 @@ const Dashboard = () => {
               ) : (
                 <>
                   {(showAllLogs ? recentLogs : recentLogs.slice(0, 5)).map((log) => {
-                    // Extract meal info (support array or single)
-                    const mealName = Array.isArray(log.meals_taken) && log.meals_taken.length > 0 ? log.meals_taken[0].meal : (log.meal || '');
+                    // Extract meal info (support multiple meals)
+                    const meals = Array.isArray(log.meals_taken) && log.meals_taken.length > 0 
+                      ? log.meals_taken 
+                      : (log.meal ? [{ meal: log.meal, time_of_day: log.time_of_day }] : []);
+                    
+                    const mealNames = meals.length > 0 
+                      ? meals.map(m => m.meal || m.meal_name).filter(Boolean)
+                      : [];
+                    
+                    const displayName = mealNames.length === 0 
+                      ? 'Unknown Meal'
+                      : mealNames.length === 1 
+                      ? mealNames[0]
+                      : mealNames.length === 2
+                      ? `${mealNames[0]} + ${mealNames[1]}`
+                      : `${mealNames[0]} + ${mealNames.length - 1} more items`;
+                    
                     const fasting = log.sugar_level_fasting || log.fastingSugar || '';
                     const postMeal = log.sugar_level_post || log.postMealSugar || '';
                     const createdAt = log.createdAt?.toDate?.() ? log.createdAt.toDate().toLocaleDateString() : '';
-                    const time = Array.isArray(log.meals_taken) && log.meals_taken.length > 0 ? log.meals_taken[0].time_of_day : (log.time_of_day || '');
+                    const time = meals.length > 0 ? meals[0].time_of_day : (log.time_of_day || '');
                     
                     // Get risk level with smart fallback
                     let risk = log.riskLevel || log.prediction?.risk_level || log.prediction?.risk || 
@@ -517,18 +588,18 @@ const Dashboard = () => {
                     
                     // If no risk level found, determine from food content and blood sugar
                     if (!risk) {
-                      const foodLower = mealName.toLowerCase();
+                      const allMealText = mealNames.join(' ').toLowerCase();
                       const postMealSugar = log.sugar_level_post || log.postMealSugar || 0;
                       
                       // High risk indicators
-                      if (foodLower.includes('sweet') || foodLower.includes('dessert') || foodLower.includes('cake') ||
-                          foodLower.includes('sugar') || foodLower.includes('ice cream') || foodLower.includes('chocolate') ||
+                      if (allMealText.includes('sweet') || allMealText.includes('dessert') || allMealText.includes('cake') ||
+                          allMealText.includes('sugar') || allMealText.includes('ice cream') || allMealText.includes('chocolate') ||
                           postMealSugar > 200) {
                         risk = 'high';
                       }
                       // Medium risk indicators
-                      else if (foodLower.includes('rice') || foodLower.includes('bread') || foodLower.includes('pasta') ||
-                               foodLower.includes('fried') || foodLower.includes('potato') || foodLower.includes('noodles') ||
+                      else if (allMealText.includes('rice') || allMealText.includes('bread') || allMealText.includes('pasta') ||
+                               allMealText.includes('fried') || allMealText.includes('potato') || allMealText.includes('noodles') ||
                                (postMealSugar > 140 && postMealSugar <= 200)) {
                         risk = 'medium';
                       }
@@ -574,8 +645,19 @@ const Dashboard = () => {
                               </div>
                             )}
                             <div>
-                              <h3 className={`font-semibold ${risk === 'high' ? 'text-white' : 'text-gray-900 dark:text-white'}`}>{mealName || '-'}</h3>
-                              <p className={`text-sm ${risk === 'high' ? 'text-white' : 'text-gray-600 dark:text-gray-400'}`}>{createdAt} {time ? `• ${time}` : ''}</p>
+                              <h3 className={`font-semibold ${risk === 'high' ? 'text-white' : 'text-gray-900 dark:text-white'}`}>{displayName}</h3>
+                              <p className={`text-sm ${risk === 'high' ? 'text-white' : 'text-gray-600 dark:text-gray-400'}`}>
+                                {createdAt} {time ? `• ${time}` : ''}
+                                {mealNames.length > 1 && (
+                                  <span className={`ml-2 px-2 py-1 rounded-full text-xs font-medium ${
+                                    risk === 'high' 
+                                      ? 'bg-white/20 text-white' 
+                                      : 'bg-primary-100 dark:bg-primary-900/30 text-primary-700 dark:text-primary-300'
+                                  }`}>
+                                    {mealNames.length} items
+                                  </span>
+                                )}
+                              </p>
                             </div>
                           </div>
                           <div className="text-right">

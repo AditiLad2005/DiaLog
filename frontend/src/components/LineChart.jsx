@@ -17,14 +17,25 @@ const BloodSugarLineChart = ({ data, title = "Blood Sugar Trends" }) => {
 
   const CustomTooltip = ({ active, payload, label }) => {
     if (active && payload && payload.length) {
+      const dataPoint = payload[0]?.payload;
       return (
         <div className="bg-white dark:bg-gray-800 p-4 rounded-lg shadow-lg border border-gray-200 dark:border-gray-600">
           <p className="text-gray-900 dark:text-white font-medium">{label}</p>
+          {dataPoint?.mealInfo && (
+            <p className="text-xs text-gray-600 dark:text-gray-400 mb-2">
+              Meals: {dataPoint.mealInfo}
+            </p>
+          )}
           {payload.map((entry, index) => (
             <p key={index} style={{ color: entry.color }} className="text-sm">
               {entry.name}: {entry.value} mg/dL
             </p>
           ))}
+          {dataPoint?.fullTime && (
+            <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">
+              {dataPoint.fullTime}
+            </p>
+          )}
         </div>
       );
     }

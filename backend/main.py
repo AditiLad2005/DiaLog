@@ -1071,30 +1071,47 @@ async def predict_multiple_meals(request: MultipleMealRequest):
         # Calculate overall confidence
         overall_confidence = sum(pred.confidence for pred in individual_predictions) / len(individual_predictions)
         
-        # Generate combined recommendations
+        # Generate combined recommendations for the meal combination
         combined_recommendations = []
         high_risk_meals = [pred.meal for pred in individual_predictions if pred.risk_level == 'high']
+        moderate_risk_meals = [pred.meal for pred in individual_predictions if pred.risk_level == 'moderate']
         
         if high_risk_meals:
             combined_recommendations.append(Recommendation(
-                name="High Risk Meals Detected",
-                reason=f"Consider avoiding or reducing portions of: {', '.join(high_risk_meals)}"
+                name="High Risk Items in Combination",
+                reason=f"Consider replacing or reducing portions of: {', '.join(high_risk_meals)} in your meal combination"
             ))
         
-        if overall_risk_level == 'moderate':
+        if overall_risk_level == 'high':
             combined_recommendations.append(Recommendation(
-                name="Moderate Risk Combination",
-                reason="Monitor blood sugar levels closely after this meal combination"
+                name="High Risk Meal Combination",
+                reason="This overall meal combination poses high risk. Consider eating these items at different times or reducing portions significantly."
+            ))
+        elif overall_risk_level == 'moderate':
+            combined_recommendations.append(Recommendation(
+                name="Moderate Risk Meal Combination",
+                reason="Monitor blood sugar levels closely after this meal combination. Consider spacing out high-carb items."
+            ))
+        
+        # Add combination-specific advice
+        if len(request.meals) > 2:
+            combined_recommendations.append(Recommendation(
+                name="Multiple Item Strategy",
+                reason=f"When eating {len(request.meals)} items together, consider eating protein-rich items first to slow glucose absorption."
             ))
         
         # Create response message
         meal_count = len(request.meals)
+        meal_list = ", ".join([meal.meal_taken for meal in request.meals[:3]])  # Show first 3 meals
+        if meal_count > 3:
+            meal_list += f" and {meal_count - 3} more items"
+        
         if is_any_unsafe:
-            message = f"Analysis complete for {meal_count} meals. Some meals in this combination may need attention."
+            message = f"Combined analysis for {meal_list}: This meal combination may need attention due to elevated risk."
         elif overall_risk_level == 'moderate':
-            message = f"Analysis complete for {meal_count} meals. This combination has moderate risk - monitor carefully."
+            message = f"Combined analysis for {meal_list}: Moderate risk detected. Monitor blood sugar levels after eating."
         else:
-            message = f"Analysis complete for {meal_count} meals. This combination appears safe for you."
+            message = f"Combined analysis for {meal_list}: This meal combination appears safe for your diabetes management."
         
         return MultipleMealResponse(
             is_safe=not is_any_unsafe,

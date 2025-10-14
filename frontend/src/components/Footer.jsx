@@ -15,17 +15,17 @@ const Footer = () => {
           </div>
 
           {/* Copyright */}
-          <div className="text-center md:text-right">
+          {/* <div className="text-center md:text-right">
             <p className="text-sm text-neutral-500 dark:text-neutral-400">
               © 2025 DiaLog. Made with <span className="text-danger-500">❤️</span> for better health management.
             </p>
-          </div>
+          </div> */}
         </div>
 
         {/* Additional info */}
         <div className="mt-6 pt-6 border-t border-neutral-200 dark:border-neutral-700">
           <p className="text-xs text-neutral-400 dark:text-neutral-500 text-center">
-            This application is for educational purposes. Always consult with healthcare professionals for medical advice.
+            Always consult with healthcare professionals for medical advice.
           </p>
         </div>
       </div>

@@ -12,8 +12,17 @@ const HealthPlanModal = ({ meal, isOpen, onClose, riskLevel = 'low' }) => {
   if (!isOpen) return null;
 
   // Health plan recommendations based on food type and risk level
-  const getHealthPlan = (mealName, risk) => {
-    const foodLower = mealName?.toLowerCase() || '';
+  const getHealthPlan = (meal, risk) => {
+    // Handle both single meals and meal combinations
+    const isMultipleMeals = meal?.isMultipleMeals;
+    const mealCount = meal?.mealCount || 1;
+    const allMeals = meal?.allMeals || [];
+    const mealName = meal?.mealName || '';
+    
+    // For analysis, consider all meals in combination
+    const foodText = isMultipleMeals && allMeals.length > 0 
+      ? allMeals.join(' ').toLowerCase() 
+      : mealName.toLowerCase();
     
     let recommendations = {
       immediate: [],
@@ -22,21 +31,52 @@ const HealthPlanModal = ({ meal, isOpen, onClose, riskLevel = 'low' }) => {
       monitoring: []
     };
 
-    // Determine food category
-    const isHighCarb = foodLower.includes('rice') || foodLower.includes('bread') || foodLower.includes('roti') || 
-                      foodLower.includes('pasta') || foodLower.includes('noodles') || foodLower.includes('potato');
-    const isSweet = foodLower.includes('sweet') || foodLower.includes('sugar') || foodLower.includes('dessert') || 
-                   foodLower.includes('cake') || foodLower.includes('ice cream') || foodLower.includes('chocolate');
-    const isProtein = foodLower.includes('dal') || foodLower.includes('lentil') || foodLower.includes('chicken') || 
-                     foodLower.includes('fish') || foodLower.includes('egg') || foodLower.includes('paneer');
-    const isVegetable = foodLower.includes('vegetable') || foodLower.includes('salad') || foodLower.includes('spinach') ||
-                       foodLower.includes('broccoli') || foodLower.includes('cabbage') || foodLower.includes('carrot');
-    const isFried = foodLower.includes('fried') || foodLower.includes('pakora') || foodLower.includes('samosa') ||
-                   foodLower.includes('chips') || foodLower.includes('fries');
+    // Determine food categories (considering all meals in combination)
+    const isHighCarb = foodText.includes('rice') || foodText.includes('bread') || foodText.includes('roti') || 
+                      foodText.includes('pasta') || foodText.includes('noodles') || foodText.includes('potato');
+    const isSweet = foodText.includes('sweet') || foodText.includes('sugar') || foodText.includes('dessert') || 
+                   foodText.includes('cake') || foodText.includes('ice cream') || foodText.includes('chocolate');
+    const isProtein = foodText.includes('dal') || foodText.includes('lentil') || foodText.includes('chicken') || 
+                     foodText.includes('fish') || foodText.includes('egg') || foodText.includes('paneer');
+    const isVegetable = foodText.includes('vegetable') || foodText.includes('salad') || foodText.includes('spinach') ||
+                       foodText.includes('broccoli') || foodText.includes('cabbage') || foodText.includes('carrot');
+    const isFried = foodText.includes('fried') || foodText.includes('pakora') || foodText.includes('samosa') ||
+                   foodText.includes('chips') || foodText.includes('fries');
+
+    // Multiple meal combination factors
+    const hasMultipleCarbs = isMultipleMeals && allMeals.filter(meal => 
+      meal.toLowerCase().includes('rice') || meal.toLowerCase().includes('bread') || meal.toLowerCase().includes('roti')
+    ).length > 1;
+    
+    const hasTea = foodText.includes('tea') || foodText.includes('chai');
+    const hasBalancedMix = isProtein && isVegetable;
 
     // HIGH RISK FOODS - Urgent intervention needed
     if (risk === 'high') {
-      if (isSweet) {
+      if (isMultipleMeals) {
+        recommendations.immediate = [
+          `URGENT: Take a 25-30 minute brisk walk - ${mealCount} items together increase glucose impact`,
+          "Drink water slowly in small sips - large volumes can worsen digestion",
+          "Check blood sugar in 1 hour - combination meals can cause prolonged spikes",
+          "Practice deep breathing - complex meals increase metabolic stress"
+        ];
+        recommendations.shortTerm = [
+          `Avoid eating multiple high-risk items together for next 6 hours`,
+          "Space out remaining meals by at least 3-4 hours today",
+          "Choose single, simple foods for your next meal",
+          "Monitor for delayed symptoms as combination meals affect glucose longer"
+        ];
+        recommendations.longTerm = [
+          "CRITICAL: Learn meal combination strategies with your healthcare provider",
+          "Practice eating high-risk foods separately, not in combinations",
+          "Consider portion control when combining multiple food items",
+          "Plan balanced combinations: protein + vegetable + limited carbs"
+        ];
+        recommendations.monitoring = [
+          "Check blood sugar every hour for next 5 hours (combinations have delayed effects)",
+          "Watch for prolonged symptoms due to complex meal digestion"
+        ];
+      } else if (isSweet) {
         recommendations.immediate = [
           "URGENT: Take a 20-25 minute brisk walk immediately to counter sugar spike",
           "Drink 2-3 glasses of water to help flush excess glucose",
@@ -138,7 +178,30 @@ const HealthPlanModal = ({ meal, isOpen, onClose, riskLevel = 'low' }) => {
     
     // MEDIUM RISK FOODS - Moderate precautions
     else if (risk === 'medium') {
-      if (isHighCarb) {
+      if (isMultipleMeals) {
+        recommendations.immediate = [
+          `Take a pleasant 15-20 minute walk - ${mealCount} items need gentle glucose management`,
+          "Drink water slowly to aid digestion of multiple items",
+          "Relax for 30-45 minutes - combination meals require more digestion time",
+          hasTea ? "The tea helps with digestion - good combination choice" : "Consider herbal tea to aid digestion"
+        ];
+        recommendations.shortTerm = [
+          "Light exercise after 1-2 hours when initial digestion settles",
+          "Monitor energy levels - combinations can provide sustained energy",
+          "Space your next meal 4-5 hours away to allow proper processing",
+          hasBalancedMix ? "Good balance of nutrients will provide steady energy" : "Consider adding vegetables to future combinations"
+        ];
+        recommendations.longTerm = [
+          "Practice planning balanced meal combinations",
+          "Limit to 2-3 items per meal for better glucose control",
+          hasBalancedMix ? "Keep creating balanced combinations like this" : "Learn to include protein + vegetable + limited carbs",
+          "Track how different combinations affect your energy and blood sugar"
+        ];
+        recommendations.monitoring = [
+          "Check blood sugar 2-3 hours after eating (combinations have delayed effects)",
+          "Note how long the energy from this combination lasts"
+        ];
+      } else if (isHighCarb) {
         recommendations.immediate = [
           "Take a 10-15 minute pleasant walk to help glucose uptake",
           "Drink a glass of water to stay hydrated",
@@ -239,7 +302,26 @@ const HealthPlanModal = ({ meal, isOpen, onClose, riskLevel = 'low' }) => {
     
     // LOW RISK FOODS - Keep it short and encouraging
     else { // low risk
-      if (isVegetable) {
+      if (isMultipleMeals && hasBalancedMix) {
+        recommendations.immediate = [
+          `Excellent combination! A pleasant 5-10 minute walk optimizes this ${mealCount}-item meal`,
+          "Stay hydrated and enjoy the sustained energy from this balanced choice",
+          hasTea ? "The tea complements this healthy combination perfectly" : "This combination provides steady energy"
+        ];
+        recommendations.shortTerm = [
+          "Continue normal activities - this combination supports stable blood sugar",
+          "This balanced mix will provide sustained energy for hours",
+          "Use this as your template for future meal planning"
+        ];
+        recommendations.longTerm = [
+          "Keep creating balanced combinations like this",
+          "You've mastered healthy meal combining - share this success!",
+          "Combinations like this are the key to long-term diabetes management"
+        ];
+        recommendations.monitoring = [
+          "Minimal blood sugar impact expected from this healthy combination"
+        ];
+      } else if (isVegetable) {
         recommendations.immediate = [
           "Great choice! A pleasant 5-minute walk is perfect",
           "Stay hydrated and enjoy the energy"
@@ -293,31 +375,43 @@ const HealthPlanModal = ({ meal, isOpen, onClose, riskLevel = 'low' }) => {
     return recommendations;
   };
 
-  const healthPlan = getHealthPlan(meal?.mealName, riskLevel);
+  const healthPlan = getHealthPlan(meal, riskLevel);
 
   // Get risk-specific general tips
   const getGeneralTips = (risk) => {
+    const isMultiple = meal?.isMultipleMeals;
+    
     if (risk === 'high') {
       return [
         "• Check blood sugar frequently until levels stabilize",
         "• Keep fast-acting glucose tablets handy for emergencies", 
         "• Contact your doctor if symptoms worsen or persist",
-        "• Avoid similar high-risk foods until you improve control",
+        isMultiple 
+          ? "• Avoid eating multiple high-risk items together in future"
+          : "• Avoid similar high-risk foods until you improve control",
         "• Stay extra hydrated and avoid alcohol today"
       ];
     } else if (risk === 'medium') {
       return [
-        "• Monitor blood sugar 2 hours after eating",
+        isMultiple 
+          ? "• Monitor blood sugar 2-3 hours after eating combinations"
+          : "• Monitor blood sugar 2 hours after eating",
         "• Stay hydrated and maintain regular meal timing",
-        "• Balance future meals with more vegetables and protein",
+        isMultiple
+          ? "• Plan better meal combinations: protein + vegetables + limited carbs"
+          : "• Balance future meals with more vegetables and protein",
         "• Track patterns to identify your personal triggers",
         "• Light exercise helps improve glucose metabolism"
       ];
     } else {
       return [
-        "• Keep making healthy choices like this",
+        isMultiple
+          ? "• Great combination! Keep choosing balanced meals like this"
+          : "• Keep making healthy choices like this",
         "• Stay hydrated throughout the day",
-        "• Use this meal as a template for future planning"
+        isMultiple
+          ? "• Use this meal combination as a template for future planning"
+          : "• Use this meal as a template for future planning"
       ];
     }
   };
@@ -355,6 +449,11 @@ const HealthPlanModal = ({ meal, isOpen, onClose, riskLevel = 'low' }) => {
                   Health Plan for {meal?.mealName || 'Your Meal'}
                 </h2>
                 <p className="text-sm text-gray-600 dark:text-gray-400">
+                  {meal?.isMultipleMeals && (
+                    <span className="inline-block bg-blue-100 dark:bg-blue-900/30 text-blue-700 dark:text-blue-300 px-2 py-1 rounded-full text-xs font-medium mr-2">
+                      {meal.mealCount} items combined
+                    </span>
+                  )}
                   Risk Level: <span className={`font-medium capitalize ${riskLevel === 'high' ? 'text-red-600' : riskLevel === 'medium' ? 'text-yellow-600' : 'text-green-600'}`}>{riskLevel}</span>
                 </p>
               </div>
@@ -367,6 +466,23 @@ const HealthPlanModal = ({ meal, isOpen, onClose, riskLevel = 'low' }) => {
             </button>
           </div>
         </div>
+
+        {/* Meal Combination Details (for multiple meals) */}
+        {meal?.isMultipleMeals && meal?.allMeals && meal.allMeals.length > 1 && (
+          <div className="px-6 py-4 bg-gray-50 dark:bg-gray-700/50 border-b border-gray-200 dark:border-gray-700">
+            <h4 className="text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">Items in this meal combination:</h4>
+            <div className="flex flex-wrap gap-2">
+              {meal.allMeals.map((mealItem, idx) => (
+                <span key={idx} className="px-3 py-1 bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-600 rounded-full text-sm font-medium text-gray-700 dark:text-gray-300">
+                  {mealItem}
+                </span>
+              ))}
+            </div>
+            <p className="text-xs text-gray-600 dark:text-gray-400 mt-2">
+              Combined analysis considers how these items interact together in your system
+            </p>
+          </div>
+        )}
 
         {/* Content */}
         <div className="p-6 space-y-6">
