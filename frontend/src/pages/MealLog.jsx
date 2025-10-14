@@ -9,6 +9,7 @@ import {
 import { saveMealLog } from "../services/firebase";
 import { auth } from "../services/firebase";
 import { fetchFoods } from '../services/api';
+import { T } from '../components/TranslatedText';
 
 const MealLog = () => {
   const [userProfile, setUserProfile] = useState(null);
@@ -341,10 +342,10 @@ const MealLog = () => {
         {/* Header */}
         <div className="text-center mb-8">
           <h1 className="text-3xl sm:text-4xl font-bold text-primary-700 dark:text-primary-400 mb-4">
-            Log Your Meal Data
+            <T>Log Your Meal Data</T>
           </h1>
           <p className="text-lg text-neutral-600 dark:text-neutral-300">
-            Track your blood sugar levels and meal details for personalized health insights
+            <T>Track your blood sugar levels and meal details for personalized health insights</T>
           </p>
         </div>
 
@@ -356,17 +357,17 @@ const MealLog = () => {
             <div className="space-y-6">
               <h2 className="text-xl font-semibold text-neutral-900 dark:text-white border-b border-neutral-200 dark:border-neutral-600 pb-2 flex items-center">
                 <BeakerIcon className="h-6 w-6 mr-2 text-primary-600 dark:text-primary-400" />
-                Blood Sugar Readings
+                <T>Blood Sugar Readings</T>
               </h2>
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-6">
                 <div>
-                  <label htmlFor="fastingSugar" className="block text-sm font-medium dark:text-white">Pre-meal Sugar (mg/dL)</label>
+                  <label htmlFor="fastingSugar" className="block text-sm font-medium dark:text-white"><T>Pre-meal Sugar (mg/dL)</T></label>
                   <input type="number" id="fastingSugar" name="fastingSugar"
                     value={formData.fastingSugar} onChange={handleInputChange}
                     className="block w-full px-4 py-3 border rounded-xl dark:bg-gray-900 dark:text-white placeholder:text-gray-400 placeholder:dark:text-gray-500 mt-2" required placeholder="Pre-meal Sugar (mg/dL)" />
                 </div>
                 <div>
-                  <label htmlFor="postMealSugar" className="block text-sm font-medium dark:text-white">Post-Meal Sugar (mg/dL)</label>
+                  <label htmlFor="postMealSugar" className="block text-sm font-medium dark:text-white"><T>Post-Meal Sugar (mg/dL)</T></label>
                   <input type="number" id="postMealSugar" name="postMealSugar"
                     value={formData.postMealSugar} onChange={handleInputChange}
                     className="block w-full px-4 py-3 border rounded-xl dark:bg-gray-900 dark:text-white placeholder:text-gray-400 placeholder:dark:text-gray-500 mt-2" required placeholder="Post-Meal Sugar (mg/dL)" />
@@ -377,13 +378,13 @@ const MealLog = () => {
             {/* Meal Information */}
             <div className="space-y-6">
               <h2 className="text-xl font-semibold flex items-center">
-                <CakeIcon className="h-6 w-6 mr-2 text-primary-600" /> <span className="dark:text-white">Meal Information</span>
+                <CakeIcon className="h-6 w-6 mr-2 text-primary-600" /> <span className="dark:text-white"><T>Meal Information</T></span>
               </h2>
 
               {/* Time of Meal Selector - Moved to top */}
               <div className="mb-6">
                 <label htmlFor="timeOfMeal" className="block text-sm font-medium text-neutral-700 dark:text-neutral-300 mb-2">
-                  Time of Meal *
+                  <T>Time of Meal *</T>
                 </label>
                 <select
                   id="timeOfMeal"
@@ -393,7 +394,7 @@ const MealLog = () => {
                   className="w-full px-4 py-3 rounded-xl border border-neutral-300 dark:border-neutral-600 bg-white dark:bg-gray-700 text-neutral-900 dark:text-white focus:ring-2 focus:ring-primary-500 focus:border-transparent transition-all duration-200"
                   required
                 >
-                  <option value="">Select time of day</option>
+                  <option value=""><T>Select time of day</T></option>
                   {timeOptions.map(time => (
                     <option key={time} value={time} className="dark:text-white">{time}</option>
                   ))}
@@ -404,7 +405,7 @@ const MealLog = () => {
               <div className="space-y-4">
                 <div className="flex items-center justify-between">
                   <h3 className="text-lg font-medium text-neutral-800 dark:text-neutral-200">
-                    Add meals for this time slot:
+                    <T>Add meals for this time slot:</T>
                   </h3>
                   {formData.timeOfMeal && (
                     <span className="text-sm text-primary-600 dark:text-primary-400 font-medium">
@@ -418,7 +419,7 @@ const MealLog = () => {
                       {/* Meal Name */}
                       <div>
                         <label className="block text-sm font-medium text-neutral-700 dark:text-neutral-300 mb-2">
-                          Meal Name *
+                          <T>Meal Name *</T>
                         </label>
                         <div className="relative">
                           <input
@@ -460,7 +461,7 @@ const MealLog = () => {
                       {/* Quantity with increment only */}
                       <div>
                         <label className="block text-sm font-medium text-neutral-700 dark:text-neutral-300 mb-2">
-                          Quantity *
+                          <T>Quantity *</T>
                         </label>
                         <div className="flex">
                           <input
@@ -499,7 +500,7 @@ const MealLog = () => {
                       {/* Unit */}
                       <div>
                         <label className="block text-sm font-medium text-neutral-700 dark:text-neutral-300 mb-2">
-                          Unit *
+                          <T>Unit *</T>
                         </label>
                         <select 
                           value={meal.unit} 
@@ -532,7 +533,7 @@ const MealLog = () => {
                           onClick={() => removeMeal(idx)} 
                           className="text-danger-600 dark:text-danger-400 hover:text-danger-700 dark:hover:text-danger-300 font-medium flex items-center"
                         >
-                          Remove this meal
+                          <T>Remove this meal</T>
                         </button>
                       </div>
                     )}
@@ -546,7 +547,7 @@ const MealLog = () => {
                     onClick={addMeal} 
                     className="px-6 py-3 rounded-xl bg-primary-100 dark:bg-primary-900/20 text-primary-700 dark:text-primary-400 hover:bg-primary-200 dark:hover:bg-primary-900/40 font-semibold flex items-center transition-all duration-200"
                   >
-                    <span className="mr-2">➕</span> Add Another Meal
+                    <span className="mr-2">➕</span> <T>Add Another Meal</T>
                   </button>
                 </div>
               </div>
@@ -574,7 +575,7 @@ const MealLog = () => {
                       ? 'text-warning-800 dark:text-warning-200'
                       : 'text-success-800 dark:text-success-200'
                   }`}>
-                    Health Assessment
+                    <T>Health Assessment</T>
                   </h3>
                   <p className={`text-sm mb-4 ${
                     prediction.overall_risk_level === 'high' || prediction.risk_level === 'high'
@@ -596,7 +597,7 @@ const MealLog = () => {
                           ? 'text-warning-800 dark:text-warning-200'
                           : 'text-success-800 dark:text-success-200'
                       }`}>
-                        Meals in this combination:
+                        <T>Meals in this combination:</T>
                       </h4>
                       <div className="flex flex-wrap gap-2">
                         {prediction.predictions.map((pred, idx) => (
@@ -647,9 +648,9 @@ const MealLog = () => {
             {/* Submit */}
             <button type="submit" disabled={!isFormValid || isLoading}
               className="w-full flex items-center justify-center px-8 py-4 text-lg font-semibold rounded-xl bg-primary-600 text-white mt-6">
-              {isLoading ? (<><ArrowPathIcon className="h-6 w-6 mr-3 animate-spin" /> Analyzing...</>)
-                : prediction === 'success' ? (<><CheckIcon className="h-6 w-6 mr-3" /> Analysis saved successfully</>)
-                : (<><CloudIcon className="h-6 w-6 mr-3" /> Submit for Analysis</>)}
+              {isLoading ? (<><ArrowPathIcon className="h-6 w-6 mr-3 animate-spin" /> <T>Analyzing...</T></>)
+                : prediction === 'success' ? (<><CheckIcon className="h-6 w-6 mr-3" /> <T>Analysis saved successfully</T></>)
+                : (<><CloudIcon className="h-6 w-6 mr-3" /> <T>Submit for Analysis</T></>)}
             </button>
           </form>
         </div>

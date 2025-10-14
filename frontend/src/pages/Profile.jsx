@@ -8,6 +8,8 @@ import {
   ArrowPathIcon,
   CheckIcon
 } from '@heroicons/react/24/outline';
+import LanguageSwitcher from '../components/LanguageSwitcher';
+import { T } from '../components/TranslatedText';
 
 const Profile = () => {
   const [formData, setFormData] = useState({
@@ -98,7 +100,8 @@ const Profile = () => {
           const newFormData = {
             ...profile,
             diabetes_type: profile.diabetes_type || 'Type2',
-            email: user.email || profile.email || ''
+            email: user.email || profile.email || '',
+            name: profile.name || user.displayName || profile.username || ''
           };
           setFormData(newFormData);
           
@@ -345,10 +348,10 @@ const Profile = () => {
         {/* Header */}
         <div className="text-center mb-8">
           <h1 className="text-3xl sm:text-4xl font-bold text-primary-700 dark:text-primary-400 mb-4">
-            Your Health Profile
+            <T>Your Health Profile</T>
           </h1>
           <p className="text-lg text-neutral-600 dark:text-neutral-300">
-            Help us personalize your diabetes management experience
+            <T>Help us personalize your diabetes management experience</T>
           </p>
         </div>
 
@@ -360,13 +363,13 @@ const Profile = () => {
             <div className="space-y-6">
               <h2 className="text-xl font-semibold text-neutral-900 dark:text-white border-b border-neutral-200 dark:border-neutral-600 pb-2 flex items-center">
                 <UserIcon className="h-6 w-6 mr-2 text-primary-600 dark:text-primary-400" />
-                Personal Information
+                <T>Personal Information</T>
               </h2>
 
               <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                 <div>
                   <label htmlFor="name" className="block text-sm font-medium text-neutral-700 dark:text-neutral-300 mb-2">
-                    Full Name *
+                    <T>Full Name *</T>
                   </label>
                   <input
                     type="text"
@@ -383,7 +386,7 @@ const Profile = () => {
 
                 <div>
                   <label htmlFor="email" className="block text-sm font-medium text-neutral-700 dark:text-neutral-300 mb-2">
-                    Email Address *
+                    <T>Email Address *</T>
                   </label>
                   <input
                     type="email"
@@ -398,11 +401,23 @@ const Profile = () => {
                   />
                 </div>
 
-                {/* Language selection removed — controlled via navbar */}
+                {/* Language Preferences
+                <div className="bg-primary-50 dark:bg-primary-900/20 rounded-xl p-4 border border-primary-200 dark:border-primary-800">
+                  <h4 className="text-sm font-medium text-primary-700 dark:text-primary-300 mb-3 flex items-center">
+                    <svg className="w-4 h-4 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 5h12M9 3v2m1.048 9.5A18.022 18.022 0 016.412 9m6.088 9h7M11 21l5-10 5 10M12.751 5C11.783 10.77 8.07 15.61 3 18.129" />
+                    </svg>
+                    <T>Language Preferences</T>
+                  </h4>
+                  <p className="text-xs text-primary-600 dark:text-primary-400 mb-3">
+                    You can also change language using the globe icon (🌐) in the top navigation bar.
+                  </p>
+                  <LanguageSwitcher className="w-full" />
+                </div> */}
 
                 <div>
                   <label htmlFor="age" className="block text-sm font-medium text-neutral-700 dark:text-neutral-300 mb-2">
-                    Age *
+                    <T>Age *</T>
                   </label>
                   <input
                     type="number"
@@ -431,7 +446,7 @@ const Profile = () => {
 
                 <div>
                   <label htmlFor="gender" className="block text-sm font-medium text-neutral-700 dark:text-neutral-300 mb-2">
-                    Gender *
+                    <T>Gender *</T>
                   </label>
                   <select
                     id="gender"
@@ -442,16 +457,16 @@ const Profile = () => {
                     required
                     disabled={!isEditing}
                   >
-                    <option value="">Select gender</option>
-                    <option value="male">Male</option>
-                    <option value="female">Female</option>
-                    <option value="other">Other</option>
+                    <option value=""><T>Select gender</T></option>
+                    <option value="male"><T>Male</T></option>
+                    <option value="female"><T>Female</T></option>
+                    <option value="other"><T>Other</T></option>
                   </select>
                 </div>
 
                 <div>
                   <label htmlFor="diabetes_type" className="block text-sm font-medium text-neutral-700 dark:text-neutral-300 mb-2">
-                    Diabetes Type *
+                    <T>Diabetes Type *</T>
                   </label>
                   <select
                     id="diabetes_type"
@@ -475,13 +490,13 @@ const Profile = () => {
             <div className="space-y-6">
               <h2 className="text-xl font-semibold text-neutral-900 dark:text-white border-b border-neutral-200 dark:border-neutral-600 pb-2 flex items-center">
                 <ScaleIcon className="h-6 w-6 mr-2 text-primary-600 dark:text-primary-400" />
-                Physical Measurements
+                <T>Physical Measurements</T>
               </h2>
 
               <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                 <div>
                   <label className="block text-sm font-medium text-neutral-700 dark:text-neutral-300 mb-2">
-                    Height *
+                    <T>Height *</T>
                   </label>
                   <div className="flex space-x-2">
                     <input
@@ -522,7 +537,7 @@ const Profile = () => {
 
                 <div>
                   <label className="block text-sm font-medium text-neutral-700 dark:text-neutral-300 mb-2">
-                    Weight *
+                    <T>Weight *</T>
                   </label>
                   <div className="flex space-x-2">
                     <input
@@ -567,7 +582,7 @@ const Profile = () => {
                 <div className="mt-4 p-4 bg-primary-50 dark:bg-primary-900/20 rounded-xl">
                   <div className="flex items-center justify-between">
                     <div>
-                      <p className="text-sm text-neutral-600 dark:text-neutral-400">Your BMI</p>
+                      <p className="text-sm text-neutral-600 dark:text-neutral-400"><T>Your BMI</T></p>
                       <p className="text-2xl font-bold text-neutral-900 dark:text-white">{bmi}</p>
                     </div>
                     <div className={`px-3 py-1 rounded-full text-sm font-medium ${getBmiCategory(parseFloat(bmi)).color}`}>
@@ -595,12 +610,12 @@ const Profile = () => {
                 {isLoading ? (
                   <>
                     <ArrowPathIcon className="h-5 w-5 mr-2 animate-spin" />
-                    Saving Profile...
+                    <T>Saving Profile...</T>
                   </>
                 ) : (
                   <>
                     <CheckIcon className="h-5 w-5 mr-2" />
-                    Save Profile
+                    <T>Save Profile</T>
                   </>
                 )}
               </button>
@@ -609,7 +624,7 @@ const Profile = () => {
                 className="mt-4 w-full flex items-center justify-center px-6 py-3 rounded-xl font-semibold text-base bg-primary-100 dark:bg-primary-900/20 text-primary-700 dark:text-primary-400 hover:bg-primary-200 dark:hover:bg-primary-900/40 transition-all duration-200"
                 onClick={() => setIsEditing((prev) => !prev)}
               >
-                {isEditing ? 'Cancel' : 'Edit'}
+                <T>{isEditing ? 'Cancel' : 'Edit'}</T>
               </button>
             </div>
           </form>

@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { auth } from '../services/firebase';
+import { TranslatedText as T } from '../components/TranslatedText';
 import { 
   ChartBarIcon, 
   HeartIcon, 
@@ -70,24 +71,24 @@ const Home = () => {
             {/* Hero badge */}
             <div className="inline-flex items-center space-x-2 bg-primary-100 dark:bg-primary-900/30 text-primary-800 dark:text-primary-300 px-6 py-3 rounded-full text-sm font-medium mb-8 animate-bounce-gentle shadow-soft">
               <SparklesIcon className="h-4 w-4" />
-              <span>Your Personal Diabetes Management Companion</span>
+              <T>Your Personal Diabetes Management Companion</T>
             </div>
 
             {/* Main headline */}
             <h1 className="text-4xl sm:text-5xl lg:text-6xl font-bold mb-6 animate-fade-in">
-              <span className="text-neutral-900 dark:text-white">
+              <T as="span" className="text-neutral-900 dark:text-white">
                 Take Control of Your
-              </span>
-              <span className="block text-primary-600 dark:text-primary-400">
+              </T>
+              <T as="span" className="block text-primary-600 dark:text-primary-400">
                 Diabetes Journey
-              </span>
+              </T>
             </h1>
 
             {/* Subtext */}
-            <p className="text-xl text-neutral-600 dark:text-neutral-300 mb-8 max-w-3xl mx-auto leading-relaxed animate-slide-up">
+            <T as="p" className="text-xl text-neutral-600 dark:text-neutral-300 mb-8 max-w-3xl mx-auto leading-relaxed animate-slide-up">
               DiaLog helps you monitor your blood sugar levels, track your meals, and make informed decisions 
               about your health with intelligent analytics and personalized insights.
-            </p>
+            </T>
 
             {/* Single Start Logging button: always send to auth */}
             <div className="flex justify-center mt-8 animate-slide-up">
@@ -95,7 +96,7 @@ const Home = () => {
                 to="/auth"
                 className="inline-flex items-center px-8 py-4 bg-primary-800 text-white text-lg font-semibold rounded-xl hover:bg-primary-900 transition-all duration-200 border-2 border-primary-500"
               >
-                Start Logging
+                <T>Start Logging</T>
                 <ArrowRightIcon className="h-5 w-5 ml-2" />
               </Link>
             </div>

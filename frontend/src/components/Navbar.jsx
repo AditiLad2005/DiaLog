@@ -10,6 +10,7 @@ import {
 } from '@heroicons/react/24/outline';
 import LogoPlaceholder from './LogoPlaceholder';
 import LanguageSwitcher from './LanguageSwitcher';
+import { T } from './TranslatedText';
 
 const Navbar = () => {
   const [isOpen, setIsOpen] = useState(false);
@@ -92,7 +93,7 @@ const Navbar = () => {
                   }
                 `}
               >
-                {item.name}
+                <T>{item.name}</T>
                 {isActive(item.href) && (
                   <div className="absolute inset-x-0 -bottom-1 h-0.5 bg-primary-500 rounded-full"></div>
                 )}
@@ -110,14 +111,14 @@ const Navbar = () => {
                 }}
                 className="relative px-4 py-2 rounded-xl text-sm font-medium bg-danger-50 text-danger-700 dark:bg-danger-900/30 dark:text-danger-300 hover:bg-danger-100 dark:hover:bg-danger-900/40 transition-all duration-300 mr-2"
               >
-                Log Out
+                <T>Log Out</T>
               </button>
             ) : (
               <button
                 onClick={() => navigate('/auth')}
                 className="relative px-4 py-2 rounded-xl text-sm font-medium bg-success-50 text-success-700 dark:bg-success-900/30 dark:text-success-300 hover:bg-success-100 dark:hover:bg-success-900/40 transition-all duration-300 mr-2"
               >
-                Log In
+                <T>Log In</T>
               </button>
             )}
             {/* Enhanced Theme toggle */}
@@ -185,7 +186,7 @@ const Navbar = () => {
                 `}
                 onClick={() => setIsOpen(false)}
               >
-                {item.name}
+                <T>{item.name}</T>
               </Link>
             ))}
             {user ? (
@@ -197,7 +198,7 @@ const Navbar = () => {
                 }}
                 className="block w-full px-4 py-3 rounded-xl text-base font-medium bg-danger-50 text-danger-700 dark:bg-danger-900/30 dark:text-danger-300 hover:bg-danger-100 dark:hover:bg-danger-900/40 transition-all duration-300"
               >
-                Log Out
+                <T>Log Out</T>
               </button>
             ) : (
               <button
@@ -207,7 +208,7 @@ const Navbar = () => {
                 }}
                 className="block w-full px-4 py-3 rounded-xl text-base font-medium bg-success-50 text-success-700 dark:bg-success-900/30 dark:text-success-300 hover:bg-success-100 dark:hover:bg-success-900/40 transition-all duration-300"
               >
-                Log In
+                <T>Log In</T>
               </button>
             )}
           </div>
