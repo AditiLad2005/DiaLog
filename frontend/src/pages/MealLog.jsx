@@ -91,8 +91,17 @@ const MealLog = () => {
       errors.meal = 'Meal name is required';
     }
     
-    if (!meal.quantity || parseFloat(meal.quantity) <= 0) {
-      errors.quantity = 'Quantity must be greater than 0';
+    const quantity = meal.quantity;
+    if (!quantity) {
+      errors.quantity = 'Quantity is required';
+    } else {
+      const numQuantity = parseFloat(quantity);
+      // Check if it's a positive whole number
+      if (numQuantity <= 0) {
+        errors.quantity = 'Quantity must be greater than 0';
+      } else if (!Number.isInteger(numQuantity)) {
+        errors.quantity = 'Please enter a whole number (e.g., 1, 2, 3)';
+      }
     }
     
     if (!meal.unit) {
@@ -457,25 +466,25 @@ const MealLog = () => {
                           <input
                             type="number"
                             value={meal.quantity}
-                            min="0.1"
-                            step="0.5"
+                            min="1"
+                            step="1"
                             onChange={e => handleMealChange(idx, 'quantity', e.target.value)}
                             className={`flex-1 px-4 py-3 rounded-l-xl border ${
                               validationErrors[`meal_${idx}`]?.quantity 
                                 ? 'border-danger-500 focus:ring-danger-500' 
                                 : 'border-neutral-300 dark:border-neutral-600 focus:ring-primary-500'
                             } bg-white dark:bg-gray-700 text-neutral-900 dark:text-white text-center focus:ring-2 focus:border-transparent transition-all duration-200`}
-                            placeholder="Amount"
+                            placeholder="1"
                             required
                           />
                           <button
                             type="button"
                             onClick={() => {
-                              const currentQty = parseFloat(meal.quantity) || 0;
-                              handleMealChange(idx, 'quantity', (currentQty + 0.5).toString());
+                              const currentQty = parseInt(meal.quantity) || 0;
+                              handleMealChange(idx, 'quantity', (currentQty + 1).toString());
                             }}
                             className="px-4 py-3 bg-primary-600 hover:bg-primary-700 text-white rounded-r-xl transition-colors duration-200 flex items-center justify-center"
-                            title="Add 0.5"
+                            title="Add 1"
                           >
                             <span className="font-bold text-lg">+</span>
                           </button>
@@ -523,7 +532,7 @@ const MealLog = () => {
                           onClick={() => removeMeal(idx)} 
                           className="text-danger-600 dark:text-danger-400 hover:text-danger-700 dark:hover:text-danger-300 font-medium flex items-center"
                         >
-                          <span className="mr-1">🗑️</span> Remove this meal
+                          Remove this meal
                         </button>
                       </div>
                     )}
@@ -577,8 +586,8 @@ const MealLog = () => {
                     {prediction.message}
                   </p>
                   
-                  {/* Individual Meal Results (for multiple meals) */}
-                  {prediction.predictions && (
+                  {/* Meal Combination Summary (for multiple meals) */}
+                  {prediction.predictions && prediction.predictions.length > 1 && (
                     <div className="mb-4">
                       <h4 className={`text-sm font-medium mb-2 ${
                         prediction.overall_risk_level === 'high' || prediction.risk_level === 'high'
@@ -587,21 +596,30 @@ const MealLog = () => {
                           ? 'text-warning-800 dark:text-warning-200'
                           : 'text-success-800 dark:text-success-200'
                       }`}>
-                        Individual Meal Analysis:
+                        Meals in this combination:
                       </h4>
-                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                      <div className="flex flex-wrap gap-2">
                         {prediction.predictions.map((pred, idx) => (
-                          <div key={idx} className={`text-xs p-2 rounded-lg ${
-                            pred.risk_level === 'high'
+                          <span key={idx} className={`text-xs px-3 py-1 rounded-full font-medium ${
+                            prediction.overall_risk_level === 'high' || prediction.risk_level === 'high'
                               ? 'bg-danger-100 dark:bg-danger-900/30 text-danger-800 dark:text-danger-200'
-                              : pred.risk_level === 'moderate'
+                              : prediction.overall_risk_level === 'moderate' || prediction.risk_level === 'moderate'
                               ? 'bg-warning-100 dark:bg-warning-900/30 text-warning-800 dark:text-warning-200'
                               : 'bg-success-100 dark:bg-success-900/30 text-success-800 dark:text-success-200'
                           }`}>
-                            <span className="font-medium">{pred.meal}:</span> {pred.risk_level} risk
-                          </div>
+                            {pred.meal}
+                          </span>
                         ))}
                       </div>
+                      <p className={`text-xs mt-2 ${
+                        prediction.overall_risk_level === 'high' || prediction.risk_level === 'high'
+                          ? 'text-danger-700 dark:text-danger-300'
+                          : prediction.overall_risk_level === 'moderate' || prediction.risk_level === 'moderate'
+                          ? 'text-warning-700 dark:text-warning-300'
+                          : 'text-success-700 dark:text-success-300'
+                      }`}>
+                        Overall risk level: <strong>{prediction.overall_risk_level || prediction.risk_level}</strong>
+                      </p>
                     </div>
                   )}
                   
